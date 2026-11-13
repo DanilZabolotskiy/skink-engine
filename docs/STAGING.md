@@ -54,7 +54,7 @@ The layer between the script and Remotion. Its job: sound out of sync, props jum
   | `cut` | a cut inside the shot (`why` required) | — |
   | `cue` | sound `sfx` out of frame; `see` required | `sfx` |
 
-  Gesture poses: `push`, `pull`, `press`, `write`, `dial`, `tap`, `hangup`, `rail`, `count`, `straighten`, `point` (see `actions.json → poses`).
+  Gesture poses: `push`, `pull`, `press`, `write`, `dial`, `tap`, `hangup`, `rail`, `count`, `straighten`, `point`, `knock` (see `actions.json → poses`). Gesture fields: `side` — the figure's own hand (`R` / `L`), `n` — fingers of `count` or hits of `knock`, `grip: "fist"` — a fist on the handle, `stay`, `in` / `out`, s; `ramp` — the entry share of `tap` (`0.001` — the figure is in the phone from the first frame of a long shot).
 - On an event: `"sfx": false` — no sound; `"sfx": ["id"]` — an own sound; `"offscreen": true` — the source is out of frame.
 - On a shot:
   - `"view"`, `"move"`, `"cast"` — override what the script words give (`cast`: `{"who", "emo", "facing", "hold", "shoe"}`; `hold` — the figure's hands [right, left]);
@@ -66,7 +66,9 @@ The layer between the script and Remotion. Its job: sound out of sync, props jum
   - `"verbs_ok": {"<phrase>": "<why the frame shows it without an event>"}`;
   - `"emo_cut": {"<who>": "<why>"}` (or `"cut"` in a `cast` entry) — another emotion from the first frame;
   - `"offscreen_sfx": {"<id>": "<why the source is clear without the frame>"}`;
-  - `"cut_in": "<why>"` on the first shot of a scene — a hard cut between scenes without a dip.
+  - `"cut_in": "<why>"` on the first shot of a scene — a hard cut between scenes without a dip;
+  - `{"do": "set", "obj": "gaze:<role>", "ray": 1}` — the look of a figure facing the camera goes where its target is seen in the frame: a target farther than the head is taken on the camera ray 0.5 m in front of the head (`gazeBy`, `lib/chapter/room.tsx`). For a target behind the figure or right above its head (otherwise a turn through 180° with a random sign, a look to the side).
+- At the top level of `staging.json`: `"lip_raw": "<why>"` — the mouth follows the aligned syllables as they are, without stretching short ones (for a chapter accepted before that rule: its rebuilt timeline keeps the mouth of the accepted video).
 
 ## What the pipeline does
 

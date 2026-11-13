@@ -5,8 +5,10 @@
  *  table, forearms on the table (hands at the table edge, elbows at the sides); point — the arm stretched up and to the side, an open
  *  hand points at something high; carry — both forearms under something carried at the chest (the kit draws what is carried); cup — a
  *  cup at the chest; count — the palm at the chest, the fingers count 1–4 over time; reach — the arm forward and up to a wall (a framed
- *  sheet, a button). */
-export type Hold = 'none' | 'carry' | 'point' | 'folder' | 'flashlight' | 'phone' | 'phoneEar' | 'stamp' | 'box' | 'tote' | 'bag' | 'keys' | 'pen' | 'cup' | 'count' | 'reach' | 'rest';
+ *  sheet, a button; from behind with a kit point — the palm on that point). mop — a mop upright in the fist of a lowered hand, the handle at
+ *  the shoulder, the rag on the floor; the knock gesture raises it and jabs the handle up (at the ceiling); mopRaised — the mop held over
+ *  the head (the end pose of knock: waits for an answer). */
+export type Hold = 'none' | 'carry' | 'point' | 'folder' | 'flashlight' | 'phone' | 'phoneEar' | 'stamp' | 'box' | 'tote' | 'bag' | 'keys' | 'pen' | 'cup' | 'count' | 'reach' | 'rest' | 'mop' | 'mopRaised';
 
 export type Look = {
   build?: 'man' | 'woman' | 'child'; // body and face type: proportions, hands, the face of the style; default — man
@@ -22,6 +24,7 @@ export type Look = {
   head?: number; // head size (1 — the default figure)
   neck?: number; // a longer neck, body units: the head sits higher above the collar (otherwise a collared shirt can touch the chin)
   hold?: [Hold, Hold]; // [right, left] — the figure's own hands: facing the camera the right hand is on the left of the frame
+  bagStrap?: string; // the colour of the strap of a held bag, drawn over an outline: a dark strap over dark trousers does not read
   features?: FaceFeatures; // individual face features of the role; a style draws those it supports
 };
 

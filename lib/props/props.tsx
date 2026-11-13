@@ -13,7 +13,9 @@ export type Hang = 'keys' | 'stamp' | 'bag' | 'tote';
 /** An item in a hand and its placement: folder — a sheet in a folder, centre at, rotation rot (°); flashlight — body centre at, axis —
  *  towards the lens, len — length factor; cup — centre at, scale; phone — centre at, angle (rad, 0 — upright), face (screen, back cover,
  *  edge, or lying flat screen up), scale, squeeze along the axis (the phone turning over its edge); box — a box at the waist held in both
- *  hands, half-width w; pen — tail and tip; hang — the item hangs from point at, swing — its rotation around it (°). */
+ *  hands, half-width w; pen — tail and tip; hang — the item hangs from point at, swing — its rotation around it (°), strap — the colour of
+ *  a bag strap drawn over its outline (a dark strap over dark trousers does not read; no field — the default thin dark strap); mop — the
+ *  clamp at base, the handle up to top, the rag hangs rag units down from the clamp, spread 0..1 — the strands spread on the floor. */
 export type Item =
   | {kind: 'folder'; at: Pt; rot: number}
   | {kind: 'flashlight'; at: Pt; axis: Pt; len: number}
@@ -21,7 +23,11 @@ export type Item =
   | {kind: 'phone'; at: Pt; angle: number; face: PhoneFace; scale: number; squeeze: number}
   | {kind: 'box'; w: number}
   | {kind: 'pen'; tail: Pt; tip: Pt}
-  | {kind: 'hang'; what: Hang; at: Pt; swing: number};
+  | {kind: 'hang'; what: Hang; at: Pt; swing: number; strap?: string}
+  | {kind: 'mop'; base: Pt; top: Pt; rag: number; spread: number};
+
+/** A bag strap with its own colour (Item hang → strap): a curve over the handle point with an outline. */
+const BAG_STRAP = 'M -56 40 Q -8 -6 0 -4 Q 8 -6 56 40';
 
 /** How a style draws props: outline colour and width (figure units), the folder colour of the role's outfit. */
 export type PropStyle = {line: string; sw: number; folder: string};
@@ -115,8 +121,38 @@ function pen(tail: Pt, tip: Pt, {line: L}: PropStyle) {
   );
 }
 
+/** A mop: the rag — a bunch of strands from the clamp that hangs down and spreads a little on the floor, the handle from the clamp to the
+ *  top, the clamp over both. */
+function mop(it: Extract<Item, {kind: 'mop'}>, {line: L, sw}: PropStyle) {
+  const B = it.base;
+  const du: Pt = [it.top[0] - B[0], it.top[1] - B[1]];
+  const len = Math.hypot(du[0], du[1]) || 1;
+  const nx = (-du[1] / len) * 8;
+  const ny = (du[0] / len) * 8;
+  const rag = '#CFC8B8';
+  const sp = it.spread;
+  const strands = [-3, -2, -1, 0, 1, 2, 3].map((i) => ({
+    x0: B[0] + i * 6,
+    x1: B[0] + i * (9 + 5 * sp) + (i % 2 ? 3 : -2),
+    y1: B[1] + it.rag - 6 + (Math.abs(i) % 2 ? -5 : 0) - 4 * Math.abs(i) * sp,
+  }));
+  const blob = `M ${n1(B[0] - 22)} ${n1(B[1] + 6)} C ${n1(B[0] - 30)} ${n1(B[1] + 40)} ${n1(B[0] - 34 - 18 * sp)} ${n1(B[1] + 80)} ${n1(strands[0].x1 - 6)} ${n1(strands[0].y1)} ` +
+    strands.map((q) => `Q ${n1(q.x1)} ${n1(q.y1 + 12)} ${n1(q.x1 + 6)} ${n1(q.y1)}`).join(' ') +
+    ` C ${n1(B[0] + 34 + 18 * sp)} ${n1(B[1] + 80)} ${n1(B[0] + 30)} ${n1(B[1] + 40)} ${n1(B[0] + 22)} ${n1(B[1] + 6)} Z`;
+  return (
+    <g>
+      <path d={blob} fill={rag} stroke={L} strokeWidth={sw * 0.7} strokeLinejoin="round" />
+      {strands.map((q, i) => <path key={i} d={`M ${n1(q.x0)} ${n1(B[1] + 12)} Q ${n1((q.x0 + q.x1) / 2 + (i % 2 ? 3 : -3))} ${n1(B[1] + it.rag * 0.55)} ${n1(q.x1)} ${n1(q.y1 - 4)}`}
+        stroke={scaleHex(rag, 0.74)} strokeWidth={3.5} fill="none" strokeLinecap="round" />)}
+      <path d={`M ${n1(it.top[0] - nx)} ${n1(it.top[1] - ny)} L ${n1(it.top[0] + nx)} ${n1(it.top[1] + ny)} L ${n1(B[0] + nx)} ${n1(B[1] + ny)} L ${n1(B[0] - nx)} ${n1(B[1] - ny)} Z`}
+        fill="#A57A4E" stroke={L} strokeWidth={sw * 0.7} strokeLinejoin="round" />
+      <rect x={n1(B[0] - 26)} y={n1(B[1] - 4)} width={52} height={18} rx={5} fill="#7E858F" stroke={L} strokeWidth={sw * 0.6} />
+    </g>
+  );
+}
+
 /** A hanging item drawn with its hanging point at the origin. */
-function hang(what: Hang, {line: L, sw}: PropStyle) {
+function hang(what: Hang, {line: L, sw}: PropStyle, strap?: string) {
   switch (what) {
     case 'keys':
       // a ring and keys with a dark outline, so they do not vanish on a light background
@@ -139,7 +175,12 @@ function hang(what: Hang, {line: L, sw}: PropStyle) {
     case 'bag':
       return (
         <g>
-          <path d="M -60 40 L 0 0 L 60 40" fill="none" stroke="#2a2a30" strokeWidth={10} />
+          {strap ? (
+            <g fill="none" strokeLinejoin="round">
+              <path d={BAG_STRAP} stroke={L} strokeWidth={20} />
+              <path d={BAG_STRAP} stroke={strap} strokeWidth={11} />
+            </g>
+          ) : <path d="M -60 40 L 0 0 L 60 40" fill="none" stroke="#2a2a30" strokeWidth={10} />}
           <rect x={-90} y={30} width={180} height={150} rx={12} fill="#E2462F" stroke={L} strokeWidth={sw} />
           <rect x={-90} y={30} width={180} height={30} rx={10} fill="#C9CED8" stroke={L} strokeWidth={sw * 0.6} />
           <rect x={-60} y={90} width={120} height={14} rx={7} fill="#F4C430" />
@@ -172,6 +213,8 @@ export function drawItem(it: Item, st: PropStyle): React.ReactNode {
     case 'pen':
       return pen(it.tail, it.tip, st);
     case 'hang':
-      return <g transform={`translate(${n1(it.at[0])} ${n1(it.at[1])})${it.swing ? ` rotate(${n1(it.swing)})` : ''}`}>{hang(it.what, st)}</g>;
+      return <g transform={`translate(${n1(it.at[0])} ${n1(it.at[1])})${it.swing ? ` rotate(${n1(it.swing)})` : ''}`}>{hang(it.what, st, it.strap)}</g>;
+    case 'mop':
+      return mop(it, st);
   }
 }

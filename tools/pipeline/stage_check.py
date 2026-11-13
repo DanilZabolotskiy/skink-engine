@@ -323,7 +323,10 @@ def frame_checks(tl: dict, video: Path, shots: list | None = None, t_base: float
     base = sel[0]['start'] if t_base is None else t_base
     issues, motion = [], {}
     for s in sel:
-        g = gray(video, s['start'] - base, s['end'] - s['start'])
+        # ffmpeg -t at a frame boundary also returns the first frame of the next shot (the cut entered the jitter measure as a jump on a
+        # still shot): a shot is exactly its own frames
+        nf = max(1, int(round((s['end'] - s['start']) * fps)))
+        g = gray(video, s['start'] - base, s['end'] - s['start'])[:nf]
         if len(g) < 4:
             continue
         df = np.abs(g[1:].astype(np.int16) - g[:-1].astype(np.int16)) > 24
@@ -360,7 +363,7 @@ def frame_checks(tl: dict, video: Path, shots: list | None = None, t_base: float
                 issues.append({'shot': s['id'], 'rule': 'jump in frame', 'level': 'error', 't': round(s['start'] + t, 2),
                                'msg': f'at {t:.2f} s of the shot {d[k] * 100:.1f} % of the frame changed within one frame, box {box} (px 1920×1080)'})
         # small jump — on frames twice as large
-        gs = gray(video, s['start'] - base, s['end'] - s['start'], SW, SH, STOP)
+        gs = gray(video, s['start'] - base, s['end'] - s['start'], SW, SH, STOP)[:nf]
         issues += cam_checks(s, gs.astype(np.float32), fps, (figs or {}).get(s['id']))
         seen = []
         for t, area, box in small_pops(gs, fps, quiet + dip, s['move'] != 'static' or bool(s.get('drift'))):
@@ -555,7 +558,7 @@ def area(a):
 PX_MIN = 14  # text size in the frame, px: smaller is not read — the text layout rules do not apply
 PX_BAR = 8  # a line halved under the title bar is visible even when small (≈ 9 px)
 TXT_CUT = 0.12  # halved text: the title bar or the frame edge cuts more than this share of the letter height (and less than 1 − the share)
-TXT_ROT = 50  # line rotation, °: a view on stairs and a sticker give up to 44° without complaints, "vertical" text is 77–90°
+TXT_ROT = 30  # line rotation in the frame, ° — by production rule 11 (a steeper line reads badly; "vertical" text is 77–90°)
 TXT_SQ = 0.5  # squeeze along an axis: the smaller axis to the larger
 TXT_SPILL = 0.12  # letters out of their sign by a share of the letter height
 TXT_PLATE = 12  # sign — a backing no larger than this many text areas (larger is a wall, not a sign)

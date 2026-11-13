@@ -32,16 +32,23 @@ const PRESS_DY = 46;
 /** Poses with a hand point of the kit (reach) or without it — the gesture arm of the common solver. */
 const REACH_POSES = ['pull', 'push', 'rail'];
 const PHONE_POSES = ['dial', 'tap', 'hangup'];
+/** Holds of a mop: at the side or raised over the head (the knock gesture raises it and jabs the handle up). */
+const MOP: Hold[] = ['mop', 'mopRaised'];
 /** From the front the visible forearm is no shorter than this share of its length in the frame (no hand without an arm in mid-frame). */
 const FORE_MIN = 0.62;
+/** A mop: the handle length from the clamp to the top and the rag length from the clamp to the floor, figure units. */
+const MOP_LEN = 650;
+const MOP_RAG = 116;
 
 /** Middle of the palm of the reach hold (a palm on a framed sheet or a button to the side at head height), figure units: a kit places the
  *  figure so that this point lands on the sheet. s — side on screen, w — body width (look.w). */
 const reachPalm = (s: number, w = 1): Pt => [s * 280 * w, -888];
 
-/** Gesture: pose, hold k, event fraction ph; event fields: side — the figure's own hand (R / L), n — how many fingers (count), grip — the
- *  push grip (fist — a fist on the handle, flat — a palm on the leaf), dur — event length, stay — the pose stays after the event. */
-export type BodyGest = {pose: string; k: number; ph: number; side?: string; n?: number; grip?: string; dur?: number; stay?: boolean};
+/** Gesture: pose, hold k, event fraction ph; event fields: side — the figure's own hand (R / L), n — how many fingers (count) or hits
+ *  (knock), grip — the push grip (fist — a fist on the handle, flat — a palm on the leaf), dur — event length, stay — the pose stays after
+ *  the event, ramp — the event fraction of the tap entry (default 0.15; 0.001 — the figure is in the phone from the first frame of the
+ *  shot instead of a slow entry over a long event). */
+export type BodyGest = {pose: string; k: number; ph: number; side?: string; n?: number; grip?: string; dur?: number; stay?: boolean; ramp?: number};
 
 /** A hand: the frame (wrist W, fingers along f, thumb or palm side u, scale k), its shape and view; q — the progress of a live shape (count —
  *  how many fingers are up, rail — the tapping phase, tap — the thumb lift). at — a point of the hand frame in figure units. */
@@ -60,7 +67,7 @@ export type BodyIn = {
   look: Look; holds: [Hold, Hold]; face: Face; back: boolean;
   walk: number; // step phase (walk.ts)
   pace?: string; // pace of the running walk event: run — running (bent knees, arm swing, the body leans forward)
-  gest?: BodyGest; // staging gesture: push, pull, rail, count, press, write, dial, tap, hangup, straighten
+  gest?: BodyGest; // staging gesture: push, pull, rail, count, press, write, dial, tap, hangup, straighten, knock
   reach?: Pt; // hand point of the gesture (door handle, rail), figure units
   tapLift?: number; // thumb lift in tap (1 — normal): a larger lift reads better on a dark medium shot
 };
@@ -144,6 +151,7 @@ export function bodyPose(p: BodyIn): Body {
   const gIdx = !g0 ? -1 : g0.side === 'R' ? 0 : g0.side === 'L' ? 1
     : PHONE_POSES.includes(g0.pose) ? (['phone', 'phoneEar'].includes(holds[0]) ? 0 : ['phone', 'phoneEar'].includes(holds[1]) ? 1 : -1)
     : g0.pose === 'count' ? pushIdx
+    : g0.pose === 'knock' ? (MOP.includes(holds[0]) ? 0 : MOP.includes(holds[1]) ? 1 : pushIdx)
     : REACH_POSES.includes(g0.pose) && p.reach && (back || Math.abs(p.reach[0]) > ((fem ? 90 : 97) * w + 60)) ? (() => {
       const i = sOf(0) === (p.reach[0] >= 0 ? 1 : -1) ? 0 : 1;
       return pushRank(holds[i]) >= 2 && holds[1 - i] === 'none' ? 1 - i : i;
@@ -405,6 +413,45 @@ export function bodyPose(p: BodyIn): Body {
       return;
     }
 
+    // ---------- a mop: the same pose facing the camera and from behind ----------
+    // mop — the mop in a lowered hand: the rag stands on the floor by the foot, the handle goes through the fist slanted to the shoulder and
+    // lies over the sleeve at the shoulder (in a close-up the handle is at the shoulder, not a separate stick). mopRaised — raised over the
+    // head without hits (waits for an answer: the end pose of knock). The knock gesture: the arm raises the mop (entry by the event hold,
+    // "in"), the handle jabs straight up n times (default 3) every 0.27 s, the first hit 0.5 s after the event start; between the hits the
+    // arm bends, on a hit it straightens. Constant arm lengths (IK); the handle has a constant length and passes through the centre of the
+    // fist; order — the arm, the mop, the fingers of the fist on top
+    if (MOP.includes(hold)) {
+      const kg = g && g.pose === 'knock' && idx === gIdx ? g : null;
+      const up = hold === 'mopRaised' ? 1 : kg ? kg.k : 0;
+      let jab = 0;
+      if (kg) {
+        const tt = kg.ph * (kg.dur ?? 2);
+        const n = Math.max(1, Math.round(kg.n ?? 3));
+        for (let i = 0; i < n; i++) {
+          const x = (tt - 0.5 - i * 0.27) / 0.12;
+          if (x > -1 && x < 1) jab = Math.max(jab, 0.5 + 0.5 * Math.cos(Math.PI * x));
+        }
+      }
+      if (up > 0) S = [S[0] + s * 4 * up, S[1] - 14 * up, S[2]]; // a raised arm raises the shoulder joint: the sleeve comes out of the shoulder
+      const upT: V3 = v3.add(S, v3.mul(v3.norm([s * 0.3, -1, zb * 0.12]), (ARM_L1 + ARM_L2) * (0.8 + 0.17 * jab)));
+      const T = mixV(hangT(0.15, 0.12 + swingF * 0.5), upT, up);
+      const pole = v3.norm(mixV(hangPole, [s * 0.75, 0.25, -zb * 0.45], up));
+      const r = solve(T, pole, back ? 'ulnar' : 'radial', 'fist', up > 0.02 ? {keep: true} : {});
+      const G = r.h.at(7, 27);
+      // lowered: the handle goes from the fist to the outside of the shoulder joint, its bottom at the rag height above the floor; raised —
+      // straight up, the fist 330 units below the top
+      const du0 = unit(G, [S[0] + s * 14, S[1] - 60]);
+      const lb = Math.max(60, (G[1] + MOP_RAG) / Math.min(-0.2, du0[1]));
+      const B0: Pt = [G[0] - du0[0] * lb, G[1] - du0[1] * lb];
+      const B1: Pt = [G[0], G[1] + (MOP_LEN - 330)];
+      const B: Pt = [lerp(B0[0], B1[0], up), lerp(B0[1], B1[1], up)];
+      const du = unit(B, G);
+      const top: Pt = [B[0] + du[0] * MOP_LEN, B[1] + du[1] * MOP_LEN];
+      push([arm(S, r.E, r.W), prop({kind: 'mop', base: B, top, rag: MOP_RAG, spread: 1 - up}), front(r.h)]);
+      log(r, {grip: G, target: G, layers: 'arm → mop → the fingers of the fist on the handle', ...(up > 0.2 ? {allowFore: 'raises the mop over the head: the arm up'} : {})});
+      return;
+    }
+
     // ---------- from behind ----------
     if (back) {
       const sideItems = ['keys', 'bag', 'tote', 'flashlight'];
@@ -423,7 +470,7 @@ export function bodyPose(p: BodyIn): Body {
         } else {
           // keys hang from the bottom of the fist, a bag handle lies in the hooked fingers; when running the bag swings on it
           target = bagI ? G : Gb;
-          item = prop({kind: 'hang', what: hold as Hang, at: target, swing: run && bagI ? -16 * sideSwing : 0});
+          item = prop({kind: 'hang', what: hold as Hang, at: target, swing: run && bagI ? -16 * sideSwing : 0, strap: look.bagStrap});
         }
         // from behind the bag hangs at the side by the arm, over the leg: the hand is drawn over the handle
         push([arm(S, r.E, r.W), item, front(r.h)]);
@@ -435,6 +482,29 @@ export function bodyPose(p: BodyIn): Body {
         const r = run && pushK <= 0 ? solve(ra.T, ra.pole, 'ulnar', 'fist') : solve(pushT(hangT(0.09, swingF + 0.02)), pushPole, 'ulnar', 'relaxed', {bend: -0.1});
         push([arm(S, r.E, r.W), front(r.h)]);
         log(r, pushK > 0.2 ? pushLog : run ? {allowFore: 'running: fist forward away from the viewer'} : {hangRef: thighMid});
+        return;
+      }
+      if (hold === 'reach' && p.reach) {
+        // from behind the palm is on the kit point (the spine of a folder on a shelf, moved by a kit event): the arm from the shoulder to
+        // the point is almost straight forward, the back of the hand towards the viewer, the middle of the palm at the point. Without a
+        // point — the pose "the arm forward and up" below (the palm would hang above the target and read as a wave). The arm is set in the
+        // frame (production rule 4d): the upper arm and the forearm keep at least 0.85 of their length in the frame, the elbow below the
+        // line shoulder → hand, the depths follow from the lengths
+        const d0 = unit([S[0], S[1]], p.reach);
+        const hl = HAND_LEN.relaxed * handK;
+        const W2: Pt = [p.reach[0] - d0[0] * hl * 0.45, p.reach[1] - d0[1] * hl * 0.45];
+        const dd = Math.hypot(W2[0] - S[0], W2[1] - S[1]) || 1;
+        const q = Math.max(1, (dd * 1.02) / ((ARM_L1 + ARM_L2) * 0.85)); // a far point stretches both segments in the frame
+        const l1 = ARM_L1 * 0.85 * q;
+        const l2 = ARM_L2 * 0.85 * q;
+        const ua: Pt = [(W2[0] - S[0]) / dd, (W2[1] - S[1]) / dd];
+        const nd: Pt = ua[0] >= 0 ? [-ua[1], ua[0]] : [ua[1], -ua[0]]; // across the arm — downwards: the elbow below the line
+        const aa = (l1 * l1 - l2 * l2 + dd * dd) / (2 * dd);
+        const hh = Math.sqrt(Math.max(0, l1 * l1 - aa * aa));
+        const pl = byPlane([S[0] + ua[0] * aa + nd[0] * hh, S[1] + ua[1] * aa + nd[1] * hh], W2);
+        const r = solve(pl.T, pl.pole, 'dorsal', 'relaxed', {keep: true});
+        push([arm(S, r.E, r.W), front(r.h)]);
+        log(r, {grip: p.reach, target: p.reach, layers: 'from behind: the arm to the point, the palm on it'});
         return;
       }
       // what is held in front (a folder, a phone, a cup, a box, a pen, a load) is hidden by the body from behind. The arm does not end at
@@ -558,7 +628,7 @@ export function bodyPose(p: BodyIn): Body {
           const taps = (gp.ph * (gp.dur ?? 1.3) * 3.2) % 1; // screen taps: 3.2 per second
           if (gp.pose === 'hangup') seg = ['ear', 'phone', sm(gp.ph)];
           else if (gp.pose === 'tap') {
-            seg = [base, 'tap', w * sm(gp.ph / 0.15)];
+            seg = [base, 'tap', w * sm(gp.ph / (gp.ramp ?? 0.15))];
             tq = (p.tapLift ?? 1) * (0.5 - 0.5 * Math.cos(2 * Math.PI * taps));
           } else {
             const up = sm((gp.ph - 0.5) / 0.5);
@@ -658,7 +728,7 @@ export function bodyPose(p: BodyIn): Body {
         const r = solve(hangT(0.13, 0.12 + swingF * (run ? 1.3 : 0.6)), hangPole, 'radial', hook ? 'hook' : 'fist');
         const G = hook ? r.h.at(-1, 50) : r.h.at(7, 44);
         // when running the bag swings on its handle
-        const item = prop({kind: 'hang', what: hold as Hang, at: G, swing: run && hook ? -16 * sideSwing : 0});
+        const item = prop({kind: 'hang', what: hold as Hang, at: G, swing: run && hook ? -16 * sideSwing : 0, strap: look.bagStrap});
         push([arm(S, r.E, r.W), item, front(r.h)]);
         log(r, {grip: G, target: G, layers: hook ? 'arm → handle → fingers hooked over it' : 'arm → prop → fist'});
         return;

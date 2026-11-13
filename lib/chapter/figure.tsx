@@ -75,13 +75,13 @@ export type FigureOpts = {
   tapLift?: number; // thumb lift in tap (Character.tapLift)
 };
 
-/** Gesture of who at lt with the event fields (side, n, grip, stay) — like gestAt (lib/staging/stage.ts), but among running gestures the
+/** Gesture of who at lt with the event fields (side, n, grip, stay, ramp) — like gestAt (lib/staging/stage.ts), but among running gestures the
  *  latest started wins (a held "stay" does not cover the next gesture: dial at the ear → hangup); before the start — the initial state
  *  of the nearest gesture (k = 0, ph = 0). hangup stays after the event: the phone is lowered. A gesture carried over the cut (carried)
  *  is in its final phase. */
 function gestOf(stage: Stage | undefined, who: string, lt: number): BodyGest | null {
   const of = (e: StageEvent, k: number, ph: number): BodyGest => ({pose: String(e.pose), k, ph, side: e.side as string | undefined, n: e.n as number | undefined,
-    grip: e.grip as string | undefined, dur: e.t1 - e.t0, stay: e.stay === true || e.pose === 'hangup'});
+    grip: e.grip as string | undefined, dur: e.t1 - e.t0, stay: e.stay === true || e.pose === 'hangup', ramp: e.ramp as number | undefined});
   let best: BodyGest | null = null;
   let bestT0 = -Infinity;
   let next: StageEvent | null = null;

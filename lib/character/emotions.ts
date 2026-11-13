@@ -53,6 +53,11 @@ export const EMOTIONS: Record<string, Face> = {
   polite: {browY: 0.2, browTilt: 0.1, eyeOpen: 0.85, eyeWhite: 0, pupil: 1, mouthCurve: 0.7, mouthOpen: 0.04, mouthWide: 1.02, wobble: 0, sweat: 0, pale: 0, blush: 0.3, tremble: 0, clutch: 0},
   // parted lips, as if about to reply but silent; fear in the eyes
   parted: {browY: 0.6, browTilt: 0.6, eyeOpen: 1.1, eyeWhite: 0.75, pupil: 0.6, mouthCurve: -0.15, mouthOpen: 0.16, mouthWide: 0.78, wobble: 0, sweat: 0.8, pale: 0.4, blush: 0, tremble: 0.1, clutch: 0.5},
+  // angry, grumbling: the brows low and drawn together (inner ends down), a heavy look, the mouth corners down, a flush. The brows sit low
+  // and steep: high and almost level brows over an old face with heavy lids read as tired
+  angry: {browY: -0.55, browTilt: -1.35, eyeOpen: 1.14, eyeWhite: 0.6, pupil: 0.72, mouthCurve: -0.7, mouthOpen: 0.03, mouthWide: 0.84, wobble: 0, sweat: 0, pale: 0, blush: 0.5, tremble: 0, clutch: 0},
+  // asleep: the lids closed, a calm face, the mouth slightly open
+  asleep: {browY: 0.0, browTilt: 0.1, eyeOpen: 0.04, eyeWhite: 0, pupil: 1, mouthCurve: 0.05, mouthOpen: 0.05, mouthWide: 0.8, wobble: 0, sweat: 0, pale: 0, blush: 0.2, tremble: 0, clutch: 0},
 };
 
 function mixFace(a: Face, b: Face, t: number): Face {

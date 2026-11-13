@@ -41,7 +41,8 @@
   "rail": "the hand on a rail at the kit's reach point, the fingers tap",
   "count": "counts on the fingers of the free hand at the chest, palm towards the viewer: the fingers unfold one by one (n — how many, 1–4); facing only",
   "straighten": "straightens up: slightly stooped at the start of the event, straight by the end (stay — stays)",
-  "point": "runs a fingertip along a line of a sheet (the kit draws the hand)"
+  "point": "runs a fingertip along a line of a sheet (the kit draws the hand)",
+  "knock": "raises the mop (hold mop) over the head and jabs the handle at the ceiling n times (default 3) every 0.27 s, the first hit 0.5 s after the start; a knock sound with three hits fits with an offset of about 0.3 s"
  },
  "verbs": [
   {"re": "\\bpulls?\\b[^;,]*\\bdoor\\b[^;,]*\\b(shut|closed|to)\\b|\\bpulls the door\\b|\\bpulls it (shut|closed|to)\\b", "need": ["door.close+gesture:pull@"], "what": "pulls a door"},
@@ -83,7 +84,7 @@
   {"re": "\\blips moving\\b|\\b(repeats|repeating|says|saying|mutters|muttering|murmurs|answers|replies|speaks|speaking|talks|talking|shouts|shouting|calls out|whispers|whispering)\\b", "need": ["line@"], "what": "speaks"},
   {"re": "\\bdials\\b|\\bdialing\\b|\\bcalls\\b|\\btaps (the|his|her) (screen|phone|number)\\b", "need": ["gesture:dial|tap@"], "what": "dials a number"},
   {"re": "\\bwhine(s|d)?\\b|\\bwhimper(s|ing)?\\b|\\bwhining\\b", "need": ["sfx:whine"], "what": "whine (sound)"},
-  {"re": "\\bthump(s|ing)?\\b|\\bknock(s|ing)?\\b|\\bbang(s|ing)?\\b|\\braps\\b|\\brapping\\b", "need": ["sfx:knock"], "what": "knock (sound)"},
+  {"re": "\\bthump(s|ing)?\\b|\\bknock(s|ing)?\\b|\\bbang(s|ing)?\\b|\\braps\\b|\\brapping\\b", "need": ["sfx:knock", "gesture:knock@"], "what": "knock (sound)"},
   {"re": "\\b(rings|ringing|buzz(es|ing)|vibrat(es|ing))\\b", "need": ["sfx:phone|doorbell|lamp_flicker"], "what": "ring, vibration (sound)"},
   {"re": "\\b(beeps?|chimes?|dings?)\\b", "need": ["sfx:beep|chime"], "what": "beep (sound)"},
   {"re": "\\b(exhales?|sighs?)\\b|\\bbreathes? out\\b", "need": ["sfx:exhale"], "what": "exhale (sound)"},

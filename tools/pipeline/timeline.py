@@ -18,7 +18,8 @@ EMO_WORDS = {
     'surprised': 'alert', 'listening': 'alert',
     'scared': 'scared', 'afraid': 'scared', 'terrified': 'scared', 'panicked': 'scared', 'frozen': 'scared', 'horrified': 'scared', 'shocked': 'scared',
     'relieved': 'relief', 'relief': 'relief', 'smiles': 'relief', 'smiling': 'relief', 'happy': 'relief',
-    'confused': 'confused', 'puzzled': 'confused', 'parted': 'parted',
+    'confused': 'confused', 'puzzled': 'confused', 'parted': 'parted', 'angry': 'angry', 'grumbling': 'angry', 'asleep': 'asleep',
+    'sleeping': 'asleep',
 }
 # names of Character faces (lib/character/emotions.ts → EMOTIONS): a staging.json emotion is taken as is, otherwise via EMO_WORDS
 FACE_NAMES = set(re.findall(r'^\s+(\w+): \{browY', (Path(__file__).resolve().parents[2] / 'lib' / 'character' / 'emotions.ts').read_text(encoding='utf-8'), re.M))
@@ -211,6 +212,9 @@ def build(scenes: dict, clips: dict, ch: Channel, staging: dict | None = None, u
     fps = cfg['fps']
     tm = cfg['timing']
     staging = staging or {}
+    # the mouth by the aligned syllables as they are, without stretching short syllables (below): staging.json "lip_raw": "<why>" — for a
+    # chapter accepted before the stretching, so that a rebuilt timeline gives the mouth of its accepted video (tools/guard.py)
+    lip_raw = bool(str(staging.get('lip_raw') or '').strip())
     warns = list(scenes.get('warnings', []))
     shots, lines, cues, sfx, music = [], [], [], [], []
     t = 0.0
@@ -307,8 +311,8 @@ def build(scenes: dict, clips: dict, ch: Channel, staging: dict | None = None, u
                         for i, ln, c, off, d in pl if ln['speaker'] == cm['who'] and not ln.get('effect')
                         for x, a, b in c['chars'] if x.isalnum()]
                 # a syllable shorter than 0.1 s — the mouth is open for one frame on a loud word (alignment gives 0.03–0.05 s): the syllable
-                # is stretched to 0.1 s, but not past the start of the next one
-                for i in range(len(talk)):
+                # is stretched to 0.1 s, but not past the start of the next one. A chapter with "lip_raw" — the syllables as they are
+                for i in range(0 if lip_raw else len(talk)):
                     a0, b0 = talk[i]
                     if b0 - a0 < 0.1:
                         nxt = talk[i + 1][0] - 0.01 if i + 1 < len(talk) else a0 + 0.1

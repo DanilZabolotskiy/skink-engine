@@ -5,7 +5,7 @@ import React from 'react';
 import {Cam, V3, dist, ellipse, focal, linePath, polyPath, pt, quad, toCam} from '../persp/persp';
 import {mixHex, scaleHex} from '../anim';
 import {FONT_KR} from '../hud/hud';
-import {Stage, eventsOf, hold} from '../staging/stage';
+import {Stage, eventsOf, hold, propAt} from '../staging/stage';
 
 export type Grad = {radial: string; a: number; a1?: number}; // radial light pool: colour, opacity in the centre (a1 — at the edge)
 export type RItem = {
@@ -188,19 +188,37 @@ const mixGaze = (a: Gaze, b: Gaze, k: number): Gaze => ({
 /** Look of figure who by the look events of the shot: the event target ("to") is the name of a kit point (points), without events — the
  *  base target base. Events go in time order and replace each other by their progress (hold: entry "in", exit "out" or "stay"); a target that
  *  is not among the kit points does not move the look. Direction — gazeTo: from the target position in the room. k — the progress of the last
- *  event towards target to. */
+ *  event towards target to.
+ *  The shot state gaze:<role> ray = 1 (staging.json: {"do": "set", "obj": "gaze:<role>", "ray": 1}) — for a figure facing the camera a
+ *  target farther than the head is taken on the camera ray through it, RAY_M in front of the head: the look goes where the target is seen
+ *  in the frame (a target behind the figure would turn the head through 180° with a random sign; a ceiling right above the head would give
+ *  a look to the side). Without the state — the target as it is in the room. */
 export function gazeBy(cam: Cam, stage: Stage | undefined, who: string, lt: number, head: V3, facing: 'front' | 'back',
   points: Record<string, V3>, base: string): Gaze & {on: Record<string, number>} {
-  let g = gazeTo(cam, head, points[base], facing, true);
+  const ray = facing === 'front' && (propAt(stage, `gaze:${who}`, 'ray', lt) ?? 0) > 0.5;
+  const aim = (t: V3): V3 => (ray ? onRay(cam, head, t) : t);
+  let g = gazeTo(cam, head, aim(points[base]), facing, true);
   const on: Record<string, number> = {};
   for (const e of eventsOf(stage, 'look', undefined, who).sort((a, b) => a.t0 - b.t0)) {
     const to = points[String(e.to)];
     if (!to) continue;
     const k = hold(e, lt);
     on[String(e.to)] = Math.max(on[String(e.to)] ?? 0, k);
-    g = mixGaze(g, gazeTo(cam, head, to, facing, true), k);
+    g = mixGaze(g, gazeTo(cam, head, aim(to), facing, true), k);
   }
   return {...g, on};
+}
+
+const RAY_M = 0.5;
+/** A target on the camera ray: a point farther than RAY_M in front of the head moves along the camera ray to the depth of the head − RAY_M
+ *  (in the frame it stays where it was). */
+function onRay(cam: Cam, head: V3, t: V3): V3 {
+  if (!t) return t;
+  const hz = toCam(cam, head)[2];
+  const tz = toCam(cam, t)[2];
+  if (!(tz > hz - RAY_M && hz - RAY_M > 0.05)) return t;
+  const s = (hz - RAY_M) / tz;
+  return [cam.pos[0] + (t[0] - cam.pos[0]) * s, cam.pos[1] + (t[1] - cam.pos[1]) * s, cam.pos[2] + (t[2] - cam.pos[2]) * s];
 }
 
 /** Screen point and scale for a figure standing at (x, 0, z) of the room: {x, y, h (px per height)}; null — behind the camera. */
