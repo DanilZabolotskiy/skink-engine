@@ -6,12 +6,14 @@ Skink is a 2D animated-video engine built on top of [Remotion](https://www.remot
 
 ## What it makes
 
-- **Story and explainer videos with characters** — cut-out characters drawn in SVG: emotions as numbers, blinking, gaze and head turns, mouth by syllables of the TTS timings, gestures (count, point, press, write, dial, phone at the ear, push / pull a door, hand on a rail…), props in hands, walking with steps matched to the body speed. The pose is solved once by the core; pluggable drawing styles draw it.
+- **Story and explainer videos with characters** — cut-out characters drawn in SVG: emotions as numbers, blinking, gaze and head turns, mouth by syllables of the TTS timings, gestures (count, point, press, write, dial, phone at the ear, push / pull a door, hand on a rail, knock with a mop…), props in hands, walking with steps matched to the body speed. The pose is solved once by the core; pluggable drawing styles draw it.
 - **Locations as rooms in metres** — a room is described once (walls, furniture, light pools, signs) and drawn flat in perspective; a view is just a camera: wide shots, close-ups, push-ins and pans of the same room.
 - **Documents and inserts** — papers and cards sliding in, stamps, notes, on-screen text cards; top-down shots of a table.
 - **Staging by events** — every motion and its sound come from one event in `staging.json` (`walk`, `look`, `gesture`, `door.open`, `paper.slide`, `stamp.press`, `lamp.flicker`…), so sound and picture cannot drift apart.
 - **HUD** — a themeable title bar with an optional counter and stamp, a place tag, an episode plate, text cards, subtitles as `.srt`.
 - **Long form** — a chapter pipeline (script → TTS → timeline → render → mix → checks) with a render cache per scene; episodes are joined from chapters.
+- **Parallel episodes** — one git worktree per episode; a chapter only adds files (kits and roles found by folder, a config part per episode); guard re-checks only the accepted chapters an edit touches; one CPU render queue per machine — [docs/PARALLEL.md](docs/PARALLEL.md).
+- **Multi-agent production** — an example Claude Code skill and agents: every stage of a chapter is a fresh agent, 8 reviewers work in parallel on a ready review pack (grids, key frames, sound tables, 1:1 crops), each role reads only its rules, the API of the kits is generated — [AGENTS.md](AGENTS.md).
 
 Works best for dialogue- and narration-driven stories with a small cast in interiors (explainers, mysteries, slice-of-life, comedy). It is weaker at organic outdoor scenes, crowds and physics.
 
