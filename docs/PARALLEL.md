@@ -79,6 +79,7 @@ A conflict — resolve it in the worktree, `git commit` (the hook does not check
 - **Before handing a chapter in** — `python tools/lane.py guard --base main --events`: everything the branch changes against `main`. If the core is touched, that is every accepted chapter; if the chapter only added files, guard is not needed.
 - The reports — `channels/<channel>/episodes/_lane/<worktree>/guard/`. The pipeline does not write into the folder of an accepted chapter.
 - Who uses a file: `python tools/lane.py usage <file>`.
+- **Known noise** — `channels/<channel>/guard_known.json` ([PIPELINE.md](PIPELINE.md), "Accepted chapters guard"): a difference that was there before the edit is shown on the line "known (guard_known.json)" and does not count — the stamp and the hook do not see it. Only the orchestrator adds an entry, and only after checking on a clean commit (before the edit) that the noise reproduces; in an engine-lane commit. Chapter agents and executors do not edit the list.
 
 ## CPU queue
 

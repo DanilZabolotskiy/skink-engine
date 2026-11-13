@@ -10,7 +10,7 @@ chapter.mp4 in a run.py --work folder).
 
 python tools/guard.py --accepted [channel] | <chapter folder> [<chapter folder> …] [--out DIR] [--at 0.5] [--events] [--shots 01.01,…]
                       [--scenes 01,02] [--base DIR] [--no-video] [--video FILE] [--reuse] [--sheets bad|all|none] [--thr 24] [--blob 40]
-                      [--base-thr 8] [--base-blob 25]
+                      [--base-thr 8] [--base-blob 25] [--known FILE | --no-known]
 
   --accepted     all accepted chapters: the lists channels/<channel>/accepted/<episode>.txt (a line — a chapter folder relative to the channel
                  folder; without a name — all channels); only those an edit touches — tools/lane.py guard (docs/PARALLEL.md)
@@ -24,6 +24,14 @@ python tools/guard.py --accepted [channel] | <chapter folder> [<chapter folder> 
   --no-video     do not compare with the video (only --base); --video — another reference video
   --reuse        do not draw frames that already lie in <out>/new (recompute the report with other thresholds)
   --sheets       pair sheets "accepted | new": bad — only differences (default), all — all frames, none — no sheets
+  --known        another known-noise list instead of channels/<channel>/guard_known.json; --no-known — no list (everything counts)
+
+Known noise (channels/<channel>/guard_known.json; only the orchestrator adds an entry, after checking on a clean commit that the noise
+was there before the edit, docs/PIPELINE.md "Accepted chapters guard"): a frame whose patches above --blob all fall into entries of the
+list (the same chapter — the path as in accepted/<episode>.txt, the same shot, the patch box inside the entry box widened by tol, the
+patch not larger than max_blob px) does not count — the report and the output show it on a separate line "known (guard_known.json)";
+the total, the exit code, the tools/lane.py stamp and the hook do not see it. Any other patch in the same shot is a difference. It
+applies to the video comparison only (not to --base).
 
 Writes to <out>: new/f_<frame>.png — frames of the current code; pairs/<shot>_<frame>.jpg — a difference sheet (the whole frame and
 1:1 crops of the difference places, accepted | new); base_pairs/… — the same against the base; report.md, report.json. Exit code 1 —
@@ -55,6 +63,8 @@ from tools.sheet import font  # noqa: E402
 
 W, H = 1920, 1080  # frame size of the chapter being checked (set from timeline.json)
 CHUNK = 120  # frames per stills.mjs run (command line length)
+KNOWN = 'guard_known.json'  # the known-noise list of a channel: channels/<channel>/guard_known.json
+KNOWN_KEYS = ('chapter', 'shot', 'box', 'tol', 'max_blob', 'why', 'date', 'commit')
 
 
 def control_frames(tl: dict, at: list, events: bool, shots=None, scenes=None) -> list:
@@ -141,7 +151,7 @@ def diff_base(new: np.ndarray, old: np.ndarray, thr: float) -> np.ndarray:
 
 
 def blobs(mask: np.ndarray, top=3) -> list:
-    """Connected difference patches (adjacent pieces within 4 px are one patch): [{area, box}] by decreasing area."""
+    """Connected difference patches (adjacent pieces within 4 px are one patch): [{area, box}] by decreasing area; top=None — all."""
     if not mask.any():
         return []
     lab, n = ndimage.label(ndimage.binary_dilation(mask, iterations=2), structure=np.ones((3, 3)))
@@ -186,6 +196,61 @@ def pair_sheet(ref: np.ndarray, new: np.ndarray, bl: list, title: str, names: tu
     S.save(out, quality=90)
 
 
+def chapter_label(wd: Path):
+    """(channel folder, chapter path as in accepted/<episode>.txt) — by the accepted lists, otherwise by the folder position; none — (None, None).
+    Compared after resolve(): in the worktree of an episode, episodes is a link to the main checkout (docs/PARALLEL.md)."""
+    chans = sorted(p for p in (ROOT / 'channels').glob('*') if p.is_dir())
+    for cd in chans:
+        for d in accepted_dirs(cd):
+            if d.resolve() == wd:
+                return cd, d.relative_to(cd).as_posix()
+    for cd in chans:
+        for base, pre in ((cd, ''), (cd / 'episodes', 'episodes/')):
+            try:
+                return cd, pre + wd.relative_to(base.resolve()).as_posix()
+            except ValueError:
+                pass
+    return None, None
+
+
+def load_known(wd: Path, a) -> tuple:
+    """(file, known-noise entries of this chapter). An entry: chapter, shot, box [x0, y0, x1, y1], tol, max_blob, why, date, commit."""
+    if a.no_known:
+        return None, []
+    cd, label = chapter_label(wd)
+    f = Path(a.known).resolve() if a.known else (cd / KNOWN if cd else None)
+    if f is None or not f.exists():
+        if a.known:
+            sys.exit(f'--known {a.known}: no such file')
+        return None, []
+    data = load_json(f)
+    ents = data.get('known') if isinstance(data, dict) else None
+    if not isinstance(ents, list):
+        sys.exit(f'{f}: expected an object {{"known": [entry, ...]}}')
+    for i, e in enumerate(ents):
+        miss = [k for k in KNOWN_KEYS if k not in e]
+        box = e.get('box')
+        ok = (not miss and isinstance(box, list) and len(box) == 4 and all(isinstance(x, int) for x in box) and box[0] < box[2] and box[1] < box[3]
+              and isinstance(e['tol'], int) and e['tol'] >= 0 and isinstance(e['max_blob'], int) and e['max_blob'] > 0)
+        if not ok:
+            sys.exit(f'{f}: entry {i + 1} is invalid — ' + (f'missing {", ".join(miss)}' if miss else 'box [x0, y0, x1, y1], tol >= 0, max_blob > 0 (integers)'))
+    return f, [e for e in ents if e['chapter'] == label]
+
+
+def known_match(sig: list, sid: str, known: list):
+    """The entries that hold every patch of sig in shot sid (patch box inside the entry box ± tol, area ≤ max_blob); one patch outside — None."""
+    hit = []
+    for b in sig:
+        e = next((e for e in known if e['shot'] == sid and b['area'] <= e['max_blob']
+                  and b['box'][0] >= e['box'][0] - e['tol'] and b['box'][1] >= e['box'][1] - e['tol']
+                  and b['box'][2] <= e['box'][2] + e['tol'] and b['box'][3] <= e['box'][3] + e['tol']), None)
+        if e is None:
+            return None
+        if e not in hit:
+            hit.append(e)
+    return hit
+
+
 def chapter(wd: Path, out: Path, a, name: str) -> dict:
     tl_path = wd / 'timeline.json'
     tl = load_json(tl_path)
@@ -196,6 +261,7 @@ def chapter(wd: Path, out: Path, a, name: str) -> dict:
     jobs = control_frames(tl, a.at, a.events, a.shots, a.scenes)
     if not jobs:
         sys.exit(f'{wd.name}: no shots')
+    known_file, known = load_known(wd, a)
     t0 = time.time()
     render(tl_path, [f for _, f, _ in jobs], out / 'new', a.reuse)
     t_render = time.time() - t0
@@ -213,10 +279,15 @@ def chapter(wd: Path, out: Path, a, name: str) -> dict:
         if not a.no_video:
             ref = video_frame(mp4, f, fps)
             m = diff_video(new, ref, a.thr)
-            bl = blobs(m)
+            full = blobs(m, top=None)
+            bl = full[:3]
             row.update(share=round(float(m.mean()) * 100, 4), blob=bl[0]['area'] if bl else 0, blobs=bl)
             row['diff'] = bool(bl and bl[0]['area'] >= a.blob)
-            if a.sheets == 'all' or (a.sheets == 'bad' and row['diff']):
+            hit = known_match([b for b in full if b['area'] >= a.blob], sid, known) if row['diff'] and known else None
+            if hit:  # every patch above the threshold is known noise (guard_known.json): it does not count
+                row['diff'] = False
+                row['known'] = [{k: e[k] for k in ('box', 'tol', 'max_blob', 'why', 'date', 'commit')} for e in hit]
+            if a.sheets == 'all' or (a.sheets == 'bad' and (row['diff'] or hit)):
                 row['pair'] = f'pairs/{sid}_{f}.jpg'
                 pair_sheet(ref, new, [b for b in bl if b['area'] >= a.blob], tag, (f'accepted ({mp4.name})', 'new (current code)'), out / row['pair'])
         if base is not None:
@@ -233,10 +304,12 @@ def chapter(wd: Path, out: Path, a, name: str) -> dict:
                     pair_sheet(old, new, [b for b in bb if b['area'] >= a.base_blob], tag, ('base (before the edit)', 'after the edit'), out / row['base_pair'])
         rows.append(row)
     bad = [r for r in rows if r.get('diff')]
+    kn = [r for r in rows if r.get('known')]
     bad_base = [r for r in rows if r.get('base')]
     no_base = [r for r in rows if 'base' in r and r['base'] is None]
     rep = {'chapter': wd.name, 'timeline': str(tl_path), 'video': None if a.no_video else str(mp4), 'base': str(base) if base else None, 'at': a.at, 'events': a.events,
            'thr': a.thr, 'blob_min': a.blob, 'frames': len(rows), 'shots': len({r['shot'] for r in rows}), 'diff': len(bad), 'diff_shots': sorted({r['shot'] for r in bad}),
+           'known': len(kn), 'known_file': str(known_file) if known_file else None,
            'base_diff': len(bad_base), 'base_diff_shots': sorted({r['shot'] for r in bad_base}), 'base_missing': len(no_base),
            'base_noise': sum(1 for r in rows if r.get('base_px') and not r.get('base')), 'base_thr': a.base_thr, 'base_blob_min': a.base_blob,
            'render_sec': round(t_render, 1), 'rows': rows}
@@ -246,6 +319,8 @@ def chapter(wd: Path, out: Path, a, name: str) -> dict:
     if not a.no_video:
         md += [f'- Against the accepted video `{mp4.name}` (threshold {a.thr:g}, patch ≥ {a.blob} px): differences in **{len(bad)}** frames in {len(rep["diff_shots"])} shots'
                + (f' — {", ".join(rep["diff_shots"])}' if bad else '')]
+        md += [f'- known ({KNOWN}): shot {r["shot"]}, frame {r["frame"]}, patch {r["blob"]} px {r["blobs"][0]["box"]} — does not count; '
+               f'{r["known"][0]["why"]} (reproduced on {r["known"][0]["commit"]})' for r in kn]
     if base is not None:
         md += [f'- Against the base `{base}` (threshold {a.base_thr:g}, patch ≥ {a.base_blob} px): **{len(bad_base)}** frames differ in {len(rep["base_diff_shots"])} shots'
                + (f' — {", ".join(rep["base_diff_shots"])}' if bad_base else '') + f'; another {rep["base_noise"]} frames differ only in bytes — rasterisation noise within the tolerance'
@@ -258,6 +333,7 @@ def chapter(wd: Path, out: Path, a, name: str) -> dict:
         md += [f'| {r["shot"]} | {r["frame"]} | {r["t"]} | {r["base"]} | {r["base_px"]} | {r.get("base_pair", "")} |' for r in bad_base]
     (out / 'report.md').write_text('\n'.join(md) + '\n', encoding='utf-8')
     print(f'{wd.name}: frames {len(rows)}' + ('' if a.no_video else f', differences with the video {len(bad)} ({", ".join(rep["diff_shots"]) or "—"})')
+          + ''.join(f'; known ({KNOWN}): shot {r["shot"]} frame {r["frame"]}, patch {r["blob"]} px' for r in kn)
           + ('' if base is None else f', differences from the base {len(bad_base)} ({", ".join(rep["base_diff_shots"]) or "—"})') + f' → {out / "report.md"}', flush=True)
     return rep
 
@@ -280,6 +356,8 @@ def main():
     ap.add_argument('--blob', type=int, default=40)
     ap.add_argument('--base-thr', type=float, default=8)
     ap.add_argument('--base-blob', type=int, default=25)
+    ap.add_argument('--known')
+    ap.add_argument('--no-known', action='store_true')
     a = ap.parse_args()
     a.at = [float(x) for x in a.at.split(',')]
     a.shots = [x.strip() for x in a.shots.split(',')] if a.shots else None

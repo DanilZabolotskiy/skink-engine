@@ -26,7 +26,8 @@ Freezing: the script and the staging of an accepted chapter (seasons/<season>/<e
 chapters are all accepted (a part file with its "episode", chapter/roles/<episode>.tsx) do not change — an error (an edit of an accepted
 chapter — only by the owner's decision: SKINK_UNFREEZE=1).
 Lanes: a file used by accepted chapters and every shared file — the engine lane; the files of a chapter (channels/<channel>/seasons/,
-chapter/kits/, chapter/roles/, pipeline/parts/ that no accepted chapter uses) — the chapter lane. A commit has one lane; an engine-lane
+chapter/kits/, chapter/roles/, pipeline/parts/ that no accepted chapter uses) — the chapter lane; the known-noise list
+channels/<channel>/guard_known.json (kept by the orchestrator) is the engine lane. A commit has one lane; an engine-lane
 commit that touches the frames or the rebuild of accepted chapters needs a guard stamp of those chapters (lane.py guard, 0 differences).
 SKINK_LANE=off — the hook lets everything through (only by the owner's decision).
 """

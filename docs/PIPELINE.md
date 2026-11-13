@@ -119,3 +119,14 @@ python tools/guard.py --accepted --base <base>    # …after it — against the 
 ```
 
 Output: `report.md`, `report.json`, `pairs/<shot>_<frame>.jpg` ("accepted | new" and 1:1 crops of the differences); exit code 1 — differences found. A difference is a regression of an accepted chapter: fix the code, or rebuild and re-accept the chapter if the new look is wanted.
+
+**Known noise** — `channels/<channel>/guard_known.json`: differences that were there before the edit (for example, a thin coloured edge the current code draws a little differently from the accepted video, on a clean commit too). The file:
+
+```json
+{"known": [{"chapter": "episodes/s01e01/en/ch02", "shot": "03.02", "frame": 1450, "box": [612, 388, 660, 396], "tol": 6,
+            "max_blob": 100, "why": "thin edge of a door frame", "date": "2026-01-31", "commit": "abc1234"}]}
+```
+
+`chapter` — the path as in `accepted/<episode>.txt`; `shot`; `box` — the patch box from the guard report `[x0, y0, x1, y1]`; `tol` — the box tolerance in px; `max_blob` — the largest patch in px; `why`, `date`, `commit` — the cause, the date and the commit it was reproduced on; `frame` — for reference. A frame whose patches above the threshold all fall into entries (the same shot, the box inside the entry box ± `tol`, the patch ≤ `max_blob`) is shown on a separate line "known (guard_known.json)" and does not count: the total, the exit code, the `lane.py` stamp and the hook do not see it. Any other patch in the same shot is a difference. Only against the video (not against `--base`). `--known <file>` — another list, `--no-known` — everything counts.
+
+Only the **orchestrator** adds an entry, and only after checking on a clean commit (before the edit: an own `SKINK_MIRROR` from a `git worktree` or a clone of that commit, `guard.py <chapter> --shots <shot> --no-known`) that the noise was there before the edit. Executors and the chapter lane do not edit the list: a patch that is not in it is a regression until the orchestrator proves otherwise. The file is the engine lane.
