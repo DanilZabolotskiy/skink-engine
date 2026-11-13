@@ -8,7 +8,7 @@ Do:
 1. The machine:
    - `{CH}/check/staging/report.md` — 0 errors; manual sound bindings (`cue`) — check by the frame;
    - `{CH}/check/report.md` — speech, lengths, colour;
-   - `{CH}/check/arms/report.txt` — 0 violations;
+   - `{CH}/check/precheck/arms/report.txt` — 0 violations (the arm poses of the precheck step);
    - `{CH}/check/guard/*/report.md` — 0.
 2. The eye: the shot sheets (`python tools/review_pack.py {CH} --out {CH}/check/c_pack` — grids at 1 frame per second and key frames), 1:1 crops by the checklist. Pictures — 2–4 per request.
 3. Small things — fix them yourself and confirm by precheck by scenes. Do not start the render.

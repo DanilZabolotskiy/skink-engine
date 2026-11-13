@@ -23,7 +23,7 @@ Add the channel's own rules (its style, its colours, its season plan) as lines o
   - print or copy keys (`.env`);
   - generate sounds — only on the owner's request;
   - voice anything but the lines of this chapter;
-  - render the chapter (`--go`, the render step) — the orchestrator does it;
+  - render the chapter (a `run.py … --go` without `--steps`, or the render step) — the orchestrator does it;
   - load the GPU;
   - start subagents;
   - commit;

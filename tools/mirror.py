@@ -18,7 +18,14 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DST = Path(os.environ.get('SKINK_MIRROR') or Path(os.environ.get('TEMP', '/tmp')) / f'{ROOT.name}-mirror')
+
+
+def default_dst(root: Path) -> Path:
+    """The default code copy of a checkout (without SKINK_MIRROR): <temp>/<checkout folder name>-mirror."""
+    return Path(os.environ.get('TEMP', '/tmp')) / f'{Path(root).name}-mirror'
+
+
+DST = Path(os.environ.get('SKINK_MIRROR') or default_dst(ROOT))
 DIRS = ['lib', 'remotion', 'channels', 'public', 'tools']
 EXT = {'.ts', '.tsx', '.js', '.mjs', '.json', '.css', '.ttf', '.otf', '.woff', '.woff2'}
 SKIP = {'episodes', 'node_modules', '__pycache__'}

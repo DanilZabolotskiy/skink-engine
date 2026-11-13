@@ -36,6 +36,8 @@ const channel: ChannelModule = {
 export default channel;
 ```
 
+Migration from a module written before the folder registry: the fields `kits: {id: Kit}` and `kitCards` are gone — write `kit: kitsOf(require.context('./kits', false, /\.tsx$/))` and give every kit file an `export const KIT: KitDef = {id, Kit, cards}`.
+
 Kits and the roles of an episode are found by folder (`lib/chapter/registry.ts`): a chapter adds a file instead of editing a shared list, so two sessions working on different episodes do not edit the same file ([PARALLEL.md](PARALLEL.md)). `require.context` is webpack's: the call must be written literally in the channel's own file, with `declare const require: {context: RequireContext};` for TypeScript. The same kit id or role in two files is an error in the frame.
 
 ```ts

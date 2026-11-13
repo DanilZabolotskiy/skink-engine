@@ -1,4 +1,12 @@
 #!/bin/sh
-# Commit hook (git config core.hooksPath tools/hooks — set by tools/episode_ws.py new): frozen accepted chapters, one lane per commit,
-# a guard stamp for an engine-lane commit — tools/lane.py hook, docs/PARALLEL.md. SKINK_LANE=off — only by the owner's decision.
-exec python tools/lane.py hook
+# Commit hook (git config core.hooksPath tools/hooks — set by tools/episode_ws.py new or by hand): frozen accepted chapters, one lane per
+# commit, a guard stamp for an engine-lane commit — tools/lane.py hook, docs/PARALLEL.md. SKINK_LANE=off — only by the owner's decision.
+# Python: "python" first on Windows (python3 there may be the Store stub), "python3" first elsewhere (many systems have no "python").
+if [ "$OS" = "Windows_NT" ]; then try="python python3"; else try="python3 python"; fi
+for py in $try; do
+  if command -v "$py" >/dev/null 2>&1; then
+    exec "$py" tools/lane.py hook
+  fi
+done
+echo "pre-commit: neither python3 nor python is on PATH — the lane hook (tools/lane.py hook) cannot run" >&2
+exit 1

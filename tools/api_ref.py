@@ -3,12 +3,14 @@ reading their sources.
 
 python tools/api_ref.py [--channel ID] [--out docs/API.md]   # write it (the channel — the only one in channels/ by default)
 python tools/api_ref.py --check                               # exit code 1 — the reference is stale (the code changed since)
-python tools/api_ref.py --ep s01e02                           # the episode (role words, verbs); default — from the branch ep/<episode>
+python tools/api_ref.py --ep s01e02                           # the episode (its part files); default — from the branch ep/<episode>,
+                                                              # otherwise the last episode of the channel
 
 docs/API.md is not in git (.gitignore): every checkout, an episode worktree too, writes its own (docs/PARALLEL.md). Sources: the kits
-chapter/kits/*.tsx (the file header, the export KIT — lib/chapter/registry.ts); in the code of a kit — the events it reads (actions of the
-library), the prop states (propAt), the look targets (lookK, gazeBy), the text it draws itself (KIT.cards); the channel config merged with
-the part files (pipeline/channel.json + parts/*.json: locations, views, roles, role words, actions and verbs), the sounds (sfx.json + parts);
+chapter/kits/*.tsx (the file header, the export KIT — lib/chapter/registry.ts, read by tools/tsx_scan.py as tools/lane.py reads it); in
+the code of a kit — the events it reads (actions of the library), the prop states (propAt), the look targets (lookK, gazeBy), the text it
+draws itself (KIT.cards); the channel config merged with the part files of the episode (pipeline/channel.json + parts/*.json: locations,
+views, roles, role words, actions and verbs), the sounds (sfx.json + parts);
 lib/staging/actions.json (actions, poses, verbs); lib/character/looks.ts (look, holds), lib/character/body.ts (gesture fields), the roles of
 chapter/cast.tsx and chapter/roles/*.tsx, Figure (lib/chapter/figure.tsx); the exports of the shared modules with the first sentence of
 their comment. The reference is not edited by hand: an edit goes into the code or its comment, then a new run.
@@ -23,6 +25,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.pipeline.common import Channel  # noqa: E402
+from tools.tsx_scan import kit_defs, number, role_defs  # noqa: E402
 
 MODULES = ['lib/staging/stage.ts', 'lib/staging/journal.tsx', 'lib/staging/walk.ts', 'lib/chapter/room.tsx', 'lib/chapter/figure.tsx',
            'lib/chapter/registry.ts', 'lib/chapter/grade.ts', 'lib/persp/persp.ts', 'lib/fx/fx.tsx', 'lib/hud/hud.tsx', 'lib/anim.ts']
@@ -106,11 +109,14 @@ def jsdoc_before(src: str, decl: str) -> str:
 # ---------- kits ----------
 
 def kit_registry(cdir: Path) -> list:
-    """Kits of the registry: files chapter/kits/*.tsx with an export KIT = {id, Kit, cards} (lib/chapter/registry.ts)."""
+    """Kits of the registry: files chapter/kits/*.tsx with an export KIT = {id, Kit, cards} (lib/chapter/registry.ts), in any shape
+    tools/tsx_scan.py reads (the same parser as tools/lane.py)."""
     out = []
     for p in sorted((cdir / 'chapter' / 'kits').glob('*.tsx')):
-        for kid, comp, cards in re.findall(r"\{id: '([\w-]+)', Kit: (\w+)(?:, cards: (\w+))?\}", read(p)):
-            out.append((kid, comp, p.stem, cards or None))
+        defs, ok = kit_defs(read(p))
+        if not ok:
+            print(f'api_ref: {p.relative_to(ROOT).as_posix()}: its export KIT could not be read in full (tools/tsx_scan.py)', file=sys.stderr)
+        out += [(d['id'], d['Kit'] or '?', p.stem, d['cards']) for d in defs]
     return out
 
 
@@ -247,18 +253,15 @@ def actions_section(lib: dict, cfg: dict) -> list:
 
 # ---------- characters ----------
 
-def role_rows(src: str, start: str) -> list:
-    """[(role, height, holds)] of an object `start = {ROLE: {…}, …}` in a cast or a role file."""
-    i = src.find(start)
-    if i < 0:
-        return []
-    body = balanced(src, src.index('{', src.index('=', i)), '{', '}')
+def role_rows(src: str, name: str, exported: bool | None) -> list:
+    """[(role, height, holds)] of an object `const NAME = {ROLE: {…}, …}` in a cast or a role file (tools/tsx_scan.py, as tools/lane.py)."""
+    roles, ok = role_defs(src, name, exported)
+    if not ok:
+        print(f'api_ref: {name}: the roles could not be read in full (tools/tsx_scan.py)', file=sys.stderr)
     rows = []
-    for m in re.finditer(r'^  (\w+): \{', body, re.M):
-        chunk = balanced(body, m.end() - 1, '{', '}')
-        h = re.search(r'\bh: ([\d.]+)', chunk)
-        hold = re.search(r'hold: \[([^\]]+)\]', chunk)
-        rows.append((m.group(1), h.group(1) if h else '', hold.group(1).replace("'", '') if hold else ''))
+    for who, v in roles.items():
+        hold = re.search(r'\bhold\s*:\s*\[([^\]]+)\]', v)
+        rows.append((who, number(v, 'h'), re.sub(r'[\'"\s]', '', hold.group(1)).replace(',', ', ') if hold else ''))
     return rows
 
 
@@ -273,9 +276,10 @@ def cast_section(cdir: Path, cfg: dict) -> list:
     L += ['**Look** (`Look`, `lib/character/looks.ts`):', ''] + [f'- {x}' for x in ts_fields(looks, 'Look')]
     L += ['', '**Face features** (`FaceFeatures`): ' + '; '.join(ts_fields(looks, 'FaceFeatures')), '']
     notes = cfg.get('cast') or {}
-    rows = [(who, 'chapter/cast.tsx', h, hold) for who, h, hold in role_rows(read(cdir / 'chapter' / 'cast.tsx'), 'CAST')]
+    cast = cdir / 'chapter' / 'cast.tsx'
+    rows = [(who, 'chapter/cast.tsx', h, hold) for who, h, hold in role_rows(read(cast), 'CAST', None)] if cast.exists() else []
     for p in sorted((cdir / 'chapter' / 'roles').glob('*.tsx')):
-        rows += [(who, f'chapter/roles/{p.name}', h, hold) for who, h, hold in role_rows(read(p), 'export const ROLES')]
+        rows += [(who, f'chapter/roles/{p.name}', h, hold) for who, h, hold in role_rows(read(p), 'ROLES', True)]
     L += ['**Roles** (regulars — `chapter/cast.tsx`; the roles of an episode — `chapter/roles/<episode>.tsx` → `ROLES`; `cast` of the config — '
           'roles with a figure. A new role of an episode — in its role file and in `pipeline/parts/<episode>.json` → `channel.cast`):', '',
           '| role | file | height, m | `look.hold` | note |', '|---|---|---|---|---|']
@@ -428,13 +432,16 @@ def main():
     ap.add_argument('--channel', help='the channel (default — the only one in channels/)')
     ap.add_argument('--out', type=Path, help='default docs/API.md')
     ap.add_argument('--check', action='store_true', help='compare with the file: 1 — stale')
-    ap.add_argument('--ep', help='the episode (s01e02): role words and verbs of its part files; default — from the branch ep/<episode>')
+    ap.add_argument('--ep', help='the episode (s01e02) whose part files are merged; default — from the branch ep/<episode>, otherwise the '
+                                 'last episode of the channel (seasons/sNN/epNN)')
     a = ap.parse_args()
     out = a.out or ROOT / 'docs' / 'API.md'
+    channel = a.channel or default_channel()
     if not a.ep:
         br = subprocess.run(['git', 'branch', '--show-current'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-        a.ep = br[3:] if br.startswith('ep/') else None
-    text = build(a.channel or default_channel(), a.ep)
+        eps = sorted(f'{s.name}e{e.name[2:]}' for s in (ROOT / 'channels' / channel / 'seasons').glob('s*') for e in s.glob('ep*') if e.is_dir())
+        a.ep = br[3:] if br.startswith('ep/') else (eps[-1] if eps else None)
+    text = build(channel, a.ep)
     if a.check:
         if (out.read_text(encoding='utf-8') if out.exists() else '') != text:
             print(f'{out}: stale — python tools/api_ref.py')

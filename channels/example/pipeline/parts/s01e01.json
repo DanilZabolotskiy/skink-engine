@@ -1,5 +1,5 @@
 {
- "_doc": "Episode s01e01 of the example channel: what its chapters add to the channel config — the guest role OSCAR, the counter insert and its stamp.lift action. Merged into channel.json (and voices.json, sfx.json, music.json under those keys) on load: tools/pipeline/common.py → Channel, docs/PARALLEL.md. cast_words and action_verbs of this file apply only to the chapters of s01e01; a key already set otherwise is an error.",
+ "_doc": "Episode s01e01 of the example channel: what its chapters add to the channel config — the guest role OSCAR, the counter insert and its stamp.lift action. Merged into channel.json (and voices.json, sfx.json, music.json under those keys) on load: tools/pipeline/common.py → Channel, docs/PARALLEL.md. Everything in this file applies only to the chapters of s01e01; a key already set otherwise is an error.",
  "episode": "s01e01",
  "channel": {
   "locations": {

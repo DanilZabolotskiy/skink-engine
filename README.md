@@ -28,6 +28,7 @@ The engine is meant to be driven by an **LLM agent**. Full guide: [AGENTS.md](AG
 ```
 npm ci                                        # Node deps (Remotion 4)
 pip install -r requirements.txt               # numpy, Pillow, scipy
+git config core.hooksPath tools/hooks         # the commit hook that guards accepted chapters (docs/PARALLEL.md)
 python tools/pipeline/run.py channels/example/seasons/s01/ep01/ch01/script.md --estimate --no-stt
 ```
 

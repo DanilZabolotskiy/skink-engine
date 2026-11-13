@@ -94,25 +94,25 @@ def style_ids() -> list:
     return sorted({p.parent.name for p in (ROOT / 'lib' / 'styles').glob('*/index.ts*')})
 
 
-# Lists of the channel config that an episode file (pipeline/parts/*.json with "episode") adds only to its own episode: the role words and
-# verbs of one episode do not mistake roles and events of another (docs/PARALLEL.md).
-SCOPED = ('cast_words', 'action_verbs')
+# An episode: "s01e02".
+EPISODE = re.compile(r'^s\d+e\d+$')
+# Lists of the channel config that a part file appends to instead of setting (the role words and the verbs of an episode).
+APPEND = ('cast_words', 'action_verbs')
 
 
-def merge_part(dst: dict, src: dict, where: str, path: str = '', own: bool = True):
-    """Merges a part file into the channel config: new keys are added, dicts merge deeply, the top-level SCOPED lists are appended (only for
-    the part's own episode: own), the lists of cast_pron are united. A key already set to another value (by the shared config or another part
-    file) is an error: shared settings change in the engine lane, not in a part file."""
+def merge_part(dst: dict, src: dict, where: str, path: str = ''):
+    """Merges a part file into the channel config: new keys are added, dicts merge deeply, the top-level APPEND lists are appended, the
+    lists of cast_pron are united. A key already set to another value (by the shared config or another part file merged into the same
+    chapter) is an error: shared settings change in the engine lane, not in a part file."""
     for k, v in src.items():
         key = f'{path}/{k}'
-        if not path and k in SCOPED:
-            if own:
-                dst[k] = dst.get(k, []) + copy.deepcopy(v)
+        if not path and k in APPEND:
+            dst[k] = dst.get(k, []) + copy.deepcopy(v)
             continue
         if k not in dst:
             dst[k] = copy.deepcopy(v)
         elif isinstance(dst[k], dict) and isinstance(v, dict):
-            merge_part(dst[k], v, where, key, own)
+            merge_part(dst[k], v, where, key)
         elif path.startswith('/cast_pron') and isinstance(dst[k], list) and isinstance(v, list):
             dst[k] = dst[k] + [x for x in v if x not in dst[k]]
         elif dst[k] == v or k.startswith('_doc'):
@@ -126,8 +126,10 @@ class Channel:
     """Channel config: channels/<channel>/pipeline/*.json merged with the part files pipeline/parts/*.json (merge_part, docs/PARALLEL.md):
     {"episode": "s01e02", "channel": {…}, "voices": {…}, "sfx": {…}, "music": {…}}, in file name order.
 
-    ep — the episode of the chapter ("s01e02", episode_of): the SCOPED lists of a part file with "episode" count only for that episode;
-    without ep — only those of part files without "episode"."""
+    ep — the episode of the chapter ("s01e02", episode_of). A part file with "episode" is merged whole into the chapters of that episode
+    only: its role names, roles, pronouns, words, verbs, places, actions, aliases and sounds never reach the chapters of another episode, so
+    a new episode cannot change how an accepted one is rebuilt. A part file without "episode" is merged into every chapter (a shared
+    setting: tools/lane.py counts it for every accepted chapter). Without ep — only the part files without "episode"."""
 
     def __init__(self, cdir: Path, ep: str | None = None):
         self.dir = cdir
@@ -142,10 +144,14 @@ class Channel:
         self.sfx = load_json(pdir / 'sfx.json')
         for f in sorted((pdir / 'parts').glob('*.json')):
             part = load_json(f)
-            own = part.get('episode') in (None, ep)
+            pe = part.get('episode')
+            if pe is not None and not (isinstance(pe, str) and EPISODE.match(pe)):
+                raise PipelineError(f'{cdir.name}/pipeline/parts/{f.name}: "episode" is "sNNeNN" (s01e02), not {pe!r}')
+            if pe not in (None, ep):
+                continue  # the file of another episode
             for k, dst in (('channel', self.cfg), ('voices', self.voices), ('sfx', self.sfx), ('music', self.music)):
                 if k in part:
-                    merge_part(dst, part[k], f'{cdir.name}/pipeline/parts/{f.name} → {k}', '', own)
+                    merge_part(dst, part[k], f'{cdir.name}/pipeline/parts/{f.name} → {k}')
         # "\b" in JSON is the backspace character, not a word boundary: such a regex silently never matches (roles and verbs are not
         # found). In channel.json a word boundary is written "\\b".
         bad = []

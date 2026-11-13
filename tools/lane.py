@@ -17,8 +17,11 @@ Who uses what (the frames of an accepted chapter are drawn by the code from its 
   stills.mjs, remotion.mjs, mirror.py, package.json, public/) — every accepted chapter;
 - a kit channels/<channel>/chapter/kits/<file>.tsx (export KIT with an id) and its imports — the chapters with a shot of that kit;
 - a role file channels/<channel>/chapter/roles/<file>.tsx (export ROLES) and its imports — the chapters with those roles in a shot;
+  the ids are read by tools/tsx_scan.py in any shape TypeScript allows; a kit or role file it cannot read counts as used by every
+  accepted chapter (a warning), and one kit id or role in two files is an error (it breaks the frames of every chapter);
 - the config (pipeline/*.json, pipeline/parts/*.json, tools/pipeline/*.py, lib/staging/actions.json) does not change the frames of accepted
-  chapters but changes their rebuild (retime): the base config — all of them, a part file with "episode" — the chapters of that episode.
+  chapters but changes their rebuild (retime): the base config and a part file without "episode" — all of them, a part file with
+  "episode" — the chapters of that episode (tools/pipeline/common.py merges it into no other episode).
 Freezing: the script and the staging of an accepted chapter (seasons/<season>/<episode>/<chapter>/) and the files of an episode whose
 chapters are all accepted (a part file with its "episode", chapter/roles/<episode>.tsx) do not change — an error (an edit of an accepted
 chapter — only by the owner's decision: SKINK_UNFREEZE=1).
@@ -42,7 +45,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from tools.pipeline.common import accepted_dirs, episode_of, load_json, save_json  # noqa: E402
+from tools.pipeline.common import EPISODE, accepted_dirs, episode_of, load_json, save_json  # noqa: E402
+from tools.tsx_scan import kit_defs, role_defs  # noqa: E402
 
 RENDER_PATH = ['tools/render.mjs', 'tools/stills.mjs', 'tools/remotion.mjs', 'tools/mirror.py', 'package.json', 'package-lock.json']
 CONFIG_ALL = ['lib/staging/actions.json']  # pipeline config inside lib: the rebuild of every chapter
@@ -64,15 +68,21 @@ def rel(p: Path) -> str:
     return p.resolve().relative_to(ROOT).as_posix()
 
 
-def block(src: str, start: str) -> str:
-    """The statement that begins with `start` up to the end of its top-level object (a line "};" or ";" at the line end)."""
-    i = src.find(start)
-    if i < 0:
-        return ''
-    j = src.find('\n};', i)
-    k = src.find(';\n', i)
-    ends = [x for x in (j + 3 if j >= 0 else -1, k + 1 if k >= 0 else -1) if x > 0]
-    return src[i:min(ends) if ends else len(src)]
+def hook_installed() -> bool:
+    """The lane hook runs on commit here: core.hooksPath is tools/hooks of this checkout (set by tools/episode_ws.py new or by hand)."""
+    hp = git('config', '--get', 'core.hooksPath', check=False).strip()
+    if not hp:
+        return False
+    p = Path(hp) if Path(hp).is_absolute() else ROOT / hp
+    return p.resolve() == (ROOT / 'tools' / 'hooks').resolve()
+
+
+def registry_notes(u) -> tuple:
+    """(errors, warnings) of the kit and role registries: duplicates break every frame; files whose ids cannot be read count for all."""
+    errs = [f'{d} — lib/chapter/registry.ts throws on the first lookup, the frames of every chapter break; rename one' for d in u.dups]
+    warn = [f'{f}: its KIT / ROLES could not be read (tools/tsx_scan.py) — counted as used by every accepted chapter; write it as '
+            "export const KIT: KitDef = {id: '…', Kit: …} / export const ROLES = {ROLE: {…}}" for fs in u.unparsed.values() for f in fs]
+    return errs, warn
 
 
 # ---------------------------------------------------------------- who uses what
@@ -86,16 +96,31 @@ class Usage:
         self.core = self.closure(['remotion/index.ts']) | set(RENDER_PATH) | set(self._files('public'))
         self.kit_file = {}  # (channel, kit id) → file
         self.role_file = {}  # (channel, role) → file
+        self.unparsed = {}  # channel → kit and role files whose ids tools/tsx_scan.py cannot read: used by every accepted chapter
+        self.dups = []  # one kit id or one role in two files of a channel: lib/chapter/registry.ts throws, every frame breaks
         self.part_ep = {}  # part file → its episode (None — every episode)
         for ch in sorted(p for p in (ROOT / 'channels').iterdir() if p.is_dir()):
-            for p in sorted((ch / 'chapter' / 'kits').glob('*.tsx')):
-                for kid in re.findall(r"\bid: '([\w-]+)'", block(p.read_text(encoding='utf-8'), 'export const KIT')):
-                    self.kit_file[(ch.name, kid)] = rel(p)
-            for p in sorted((ch / 'chapter' / 'roles').glob('*.tsx')):
-                for who in re.findall(r"^  '?([A-Za-z_]\w*)'?: ", block(p.read_text(encoding='utf-8'), 'export const ROLES'), re.M):
-                    self.role_file[(ch.name, who)] = rel(p)
+            for sub, own, what in (('kits', self.kit_file, 'kit'), ('roles', self.role_file, 'role')):
+                for p in sorted((ch / 'chapter' / sub).glob('*.tsx')):
+                    src = p.read_text(encoding='utf-8')
+                    if sub == 'kits':
+                        defs, ok = kit_defs(src)
+                        keys = [d['id'] for d in defs]
+                    else:
+                        roles, ok = role_defs(src)
+                        keys = list(roles)
+                    for key in keys:
+                        if (ch.name, key) in own and own[(ch.name, key)] != rel(p):
+                            self.dups.append(f'{what} "{key}" in {own[(ch.name, key)]} and {rel(p)}')
+                        own[(ch.name, key)] = rel(p)
+                    if not ok:
+                        self.unparsed.setdefault(ch.name, []).append(rel(p))
             for p in sorted((ch / 'pipeline' / 'parts').glob('*.json')):
-                self.part_ep[rel(p)] = load_json(p).get('episode')
+                try:
+                    ep = load_json(p).get('episode')
+                except ValueError:
+                    ep = None  # broken JSON: the rebuild of every chapter stops on it
+                self.part_ep[rel(p)] = ep if isinstance(ep, str) and EPISODE.match(ep) else None
         self.chapters = []  # [{'label', 'wd', 'cdir', 'ep', 'own', 'code', 'conf'}]
         for cdir in sorted(p for p in (ROOT / 'channels').iterdir() if p.is_dir()):
             for wd in accepted_dirs(cdir):
@@ -146,6 +171,7 @@ class Usage:
         roles = {c['who'] for s in tl['shots'] for c in s.get('cast', [])}
         starts = [self.kit_file[(cdir.name, k)] for k in kits if (cdir.name, k) in self.kit_file]
         starts += [self.role_file[(cdir.name, r)] for r in roles if (cdir.name, r) in self.role_file]
+        starts += self.unparsed.get(cdir.name, [])
         pdir = f'{rel(cdir)}/pipeline'
         conf = {f'{pdir}/{x}' for x in ('channel.json', 'voices.json', 'sfx.json', 'music.json')} | set(CONFIG_ALL)
         conf |= {f for f, e in self.part_ep.items() if f.startswith(f'{pdir}/') and e in (None, ep)}
@@ -171,6 +197,8 @@ class Usage:
         if not ep:
             return []
         e = re.match(r's(\d+)e(\d+)$', ep)
+        if not e:
+            return []
         chs = sorted(p.name for p in (ROOT / m.group(1) / 'seasons' / f's{e.group(1)}' / f'ep{e.group(2)}').glob('ch*') if p.is_dir())
         acc = [c['label'] for c in self.chapters if c['ep'] == ep and c['cdir'] == ROOT / m.group(1)]
         return acc if chs and len(acc) >= len(chs) else []
@@ -213,8 +241,8 @@ def analyse(a, u: Usage | None = None) -> dict:
     rows = []
     for st, path in changed(a):
         frames, conf = u.users(path)  # a new file too: the core or a kit of an accepted chapter may already import it
-        if st == 'D' and (path.endswith(TS) or path.startswith('lib/')):
-            frames = [c['label'] for c in u.chapters]  # deleted code: if it was imported, the frames change
+        if st == 'D' and (path.endswith(TS) or path.startswith(('lib/', 'public/')) or path in RENDER_PATH):
+            frames = [c['label'] for c in u.chapters]  # deleted code, a font, the render path: if it was used, the frames change
         frz = u.frozen(path) if st != 'A' else []
         rows.append({'st': st, 'path': path, 'frames': frames, 'conf': conf, 'frozen': frz, 'lane': lane_of(path, frames, conf)})
     return {'rows': rows, 'usage': u}
@@ -235,9 +263,17 @@ def cmd_check(a) -> int:
     res = analyse(a)
     n = len(res['usage'].chapters)
     rows = res['rows']
+    errs, warn = registry_notes(res['usage'])
+    for w in warn:
+        print(f'warning: {w}')
+    for e in errs:
+        print(f'ERROR: {e}')
+    if n and not hook_installed():
+        print('warning: the lane hook is not installed here (git config core.hooksPath tools/hooks): commits are not checked, and the '
+              'guard step of the pipeline checks every accepted chapter')
     if not rows:
         print('no changes')
-        return 0
+        return 1 if errs else 0
     print(f'{"st":2} {"lane":7} {"frames of accepted":28} {"rebuild":20} file')
     for r in rows:
         print(f'{r["st"]:2} {r["lane"]:7} {short(r["frames"], n)[:28]:28} {short(r["conf"], n)[:20]:20} {r["path"]}'
@@ -250,8 +286,8 @@ def cmd_check(a) -> int:
         print('lanes are mixed: commit the engine lane separately (git commit <engine paths>), then the chapter (docs/PARALLEL.md)')
     if frozen:
         print(f'FROZEN: {len(frozen)} files of accepted chapters — an edit only by the owner\'s decision (SKINK_UNFREEZE=1)')
-        return 0 if os.environ.get('SKINK_UNFREEZE') else 1
-    return 0
+        return 0 if os.environ.get('SKINK_UNFREEZE') and not errs else 1
+    return 1 if errs else 0
 
 
 # ---------------------------------------------------------------- guard of the touched chapters and the stamp
@@ -268,7 +304,7 @@ def retime(u: Usage, labels: list | None = None) -> list:
     """A rebuild of the accepted chapters by the current code: parse + speech from the cache (a copy of voice/, no API calls; an estimated
     chapter — estimated again) + timeline = their timeline.json. → [lines about the differences]."""
     from tools.pipeline import parse, timeline, voice
-    from tools.pipeline.common import Channel, channel_dir
+    from tools.pipeline.common import Channel, PipelineError, channel_dir
     bad = []
     for c in u.chapters:
         if labels is not None and c['label'] not in labels:
@@ -279,17 +315,21 @@ def retime(u: Usage, labels: list | None = None) -> list:
             continue
         ref = load_json(c['wd'] / 'timeline.json')
         script = parse.pick_script(sdir / 'script.md', c['lang'])
-        chn = Channel(channel_dir(script), episode_of(script))
-        if ref.get('style'):
-            chn.cfg['style'] = ref['style']  # the chapter was built in this drawing style (run.py --style)
-        with tempfile.TemporaryDirectory(prefix='skink-retime-') as td:
-            od = Path(td)
-            if (c['wd'] / 'voice').exists():
-                shutil.copytree(c['wd'] / 'voice', od / 'voice')
-            with contextlib.redirect_stdout(io.StringIO()):
-                sc = parse.parse(script, chn, c['lang'])
-                clips = voice.run(sc, od, chn, go=False, est=any(ln.get('estimate') for ln in ref['lines']))
-                tl = timeline.build(sc, clips, chn, timeline.load_staging(script))
+        try:
+            chn = Channel(channel_dir(script), episode_of(script))
+            if ref.get('style'):
+                chn.cfg['style'] = ref['style']  # the chapter was built in this drawing style (run.py --style)
+            with tempfile.TemporaryDirectory(prefix='skink-retime-') as td:
+                od = Path(td)
+                if (c['wd'] / 'voice').exists():
+                    shutil.copytree(c['wd'] / 'voice', od / 'voice')
+                with contextlib.redirect_stdout(io.StringIO()):
+                    sc = parse.parse(script, chn, c['lang'])
+                    clips = voice.run(sc, od, chn, go=False, est=any(ln.get('estimate') for ln in ref['lines']))
+                    tl = timeline.build(sc, clips, chn, timeline.load_staging(script))
+        except PipelineError as e:
+            bad.append(f'{c["label"]}: the rebuild stops — {e}')
+            continue
         tl = json.loads(json.dumps(tl, ensure_ascii=False))
         # the order of carried events of one shot may follow a set of roles (staging.carry_out), so it varies between runs: the events of a
         # shot are compared without their order
@@ -313,7 +353,7 @@ def cmd_guard(a) -> int:
     if a.all:
         frames = [c['label'] for c in u.chapters]
         conf = list(frames)
-    files = {r['path']: blob(r['path']) for r in res['rows'] if (r['frames'] or r['conf'] or a.all) and r['st'] != 'D'}
+    files = {r['path']: blob(r['path']) for r in res['rows'] if r['frames'] or r['conf'] or a.all}  # a deleted file — None
     t0 = time.time()
     ok = True
     if frames:
@@ -363,8 +403,11 @@ def cmd_hook(a) -> int:
         # a merge commit (sync: git merge main with a conflict) — the edits passed the hook in their branches; after it — lane.py guard --since
         return 0
     a.staged, a.since, a.base = True, None, None
-    rows = analyse(a)['rows']
-    errs = []
+    res = analyse(a)
+    rows = res['rows']
+    errs, warn = registry_notes(res['usage'])
+    for w in warn:
+        print(f'lane (tools/lane.py hook): warning: {w}', file=sys.stderr)
     frozen = [r for r in rows if r['frozen']]
     if frozen and not os.environ.get('SKINK_UNFREEZE'):
         errs.append('frozen (accepted chapters; an edit only by the owner\'s decision, SKINK_UNFREEZE=1): '
@@ -373,16 +416,17 @@ def cmd_hook(a) -> int:
         eng = [r['path'] for r in rows if r['lane'] == 'engine']
         errs.append('lanes are mixed — commit the engine lane apart from the chapter (docs/PARALLEL.md). Engine lane: ' + ', '.join(eng[:12])
                     + ('…' if len(eng) > 12 else ''))
-    need = [r for r in rows if (r['frames'] or r['conf']) and r['st'] != 'D']
+    need = [r for r in rows if r['frames'] or r['conf']]
     if need:
         st = load_json(stamp_path()) if stamp_path().exists() else {}
-        staged = {}
+        staged = {}  # path → the staged blob; a deleted file — None (as the stamp has it)
         for ln in git('diff', '--cached', '--raw', '--no-abbrev', '-M').splitlines():
             p = ln.split('\t')
             meta = p[0].split()
-            if len(meta) >= 4:
-                staged[p[-1]] = meta[3]
-        bad = [r['path'] for r in need if st.get('files', {}).get(r['path']) != staged.get(r['path'])]
+            if len(meta) >= 5:
+                staged[p[-1]] = None if meta[4].startswith('D') else meta[3]
+        sf = st.get('files', {})
+        bad = [r['path'] for r in need if r['path'] not in sf or sf[r['path']] != staged.get(r['path'])]
         miss = sorted({c for r in need for c in r['frames']} - set(st.get('frames', [])))
         missc = sorted({c for r in need for c in r['conf']} - set(st.get('retime', [])))
         if bad or miss or missc or not st.get('ok'):

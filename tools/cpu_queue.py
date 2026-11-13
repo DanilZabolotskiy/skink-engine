@@ -40,18 +40,35 @@ def qdir() -> Path | None:
 
 def units(q: Path) -> int:
     if os.environ.get('SKINK_CPU_UNITS'):
-        return max(1, int(os.environ['SKINK_CPU_UNITS']))
+        try:
+            return max(1, int(os.environ['SKINK_CPU_UNITS']))
+        except ValueError:
+            print(f'CPU queue: SKINK_CPU_UNITS={os.environ["SKINK_CPU_UNITS"]!r} is not a number — {DEFAULT_UNITS} units', file=sys.stderr)
+            return DEFAULT_UNITS
     try:
         return max(1, int(json.loads((q / 'config.json').read_text(encoding='utf-8')).get('units', DEFAULT_UNITS)))
     except (OSError, ValueError):
         return DEFAULT_UNITS
 
 
-def _hold(f):
-    """The ticket stays open for the whole step; elsewhere than Windows it is also flock-ed (on Windows an open file cannot be deleted)."""
-    if os.name != 'nt':
-        import fcntl
-        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+def _ticket(me: Path, info: dict):
+    """Creates the ticket me and returns it open; it stays open for the whole step. Windows: a file opened by its owner cannot be deleted.
+    Elsewhere the ticket is flock-ed, and it appears under its name only locked: it is written under a temporary name, locked, then renamed
+    (the lock goes with the file), so a waiting process never takes a fresh unlocked ticket for a dead one."""
+    data = json.dumps(info, ensure_ascii=False)
+    if os.name == 'nt':
+        f = open(me, 'x', encoding='utf-8')
+        f.write(data)
+        f.flush()
+        return f
+    import fcntl
+    tmp = me.with_name(me.name + '.new')
+    f = open(tmp, 'x', encoding='utf-8')
+    fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    f.write(data)
+    f.flush()
+    os.rename(tmp, me)
+    return f
 
 
 def _dead(p: Path) -> bool:
@@ -119,16 +136,19 @@ def slot(kind: str, label: str = '', log=print):
     cap = units(q)
     w = min(WEIGHT.get(kind, 1), cap)
     me = q / f'{time.time_ns():020d}_{os.getpid()}_{w}.tk'
-    f = open(me, 'x', encoding='utf-8')
+    info = {'kind': kind, 'label': label or kind, 'pid': os.getpid(), 't': time.time(), 'cwd': os.getcwd()}
+    f = _ticket(me, info)
     try:
-        f.write(json.dumps({'kind': kind, 'label': label or kind, 'pid': os.getpid(), 't': time.time(), 'cwd': os.getcwd()}, ensure_ascii=False))
-        f.flush()
-        _hold(f)
         t0 = time.time()
         said = 0.0
         while True:
             live = tickets(q, me)
-            ahead = live[:[p for p, _ in live].index(me)]
+            names = [p for p, _ in live]
+            if me not in names:  # the ticket is gone (removed by hand): the same name again — the same place in the order
+                f.close()
+                f = _ticket(me, info)
+                continue
+            ahead = live[:names.index(me)]
             used = sum(pw for _, pw in ahead)
             if used + w <= cap:
                 break

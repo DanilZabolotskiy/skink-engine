@@ -23,7 +23,7 @@ The tools: `tools/episode_ws.py` (the workplace of an episode), `tools/lane.py` 
 |---|---|
 | the script and the staging of a chapter | `channels/<channel>/seasons/s01/ep02/chNN/` — `script.md` (and `script.<lang>.md`), `staging.json` |
 | the roles of the episode (code) | `channels/<channel>/chapter/roles/s01e02.tsx` → `ROLES` (role → person) |
-| the config of the episode | `channels/<channel>/pipeline/parts/s01e02.json`: `"episode": "s01e02"`, `channel` (`locations`, `cast`, `names`, `cast_words`, `action_verbs`, `actions`, `cast_pron`), `voices` (`aliases`), `sfx` (`sounds`) |
+| the config of the episode | `channels/<channel>/pipeline/parts/s01e02.json`: `"episode": "s01e02"`, `channel` (`locations`, `cast`, `names`, `cast_words`, `action_verbs`, `actions`, `cast_pron`), `voices` (`aliases`), `sfx` (`sounds`) — all of it counts only in the chapters of s01e02 |
 | a new kit | `channels/<channel>/chapter/kits/<kit>.tsx` with `export const KIT: KitDef = {id, Kit, cards}` |
 | the work folder of a chapter | `channels/<channel>/episodes/s01e02/<lang>/chNN/` — shared by every worktree (a link) |
 | accepted chapters | `channels/<channel>/accepted/s01e02.txt` — a file per episode |
@@ -31,14 +31,18 @@ The tools: `tools/episode_ws.py` (the workplace of an episode), `tools/lane.py` 
 | the code copy for rendering | `<temp>/<repo>-s01e02-mirror` (`tools/mirror.py`) |
 | the CPU queue | `%LOCALAPPDATA%/skink-cpu-queue` (`~/.cache/skink-cpu-queue` elsewhere) — one per machine |
 
-The links of a worktree to the main checkout (junctions on Windows, symlinks elsewhere): `node_modules`, `channels/<channel>/episodes` (voice, the guard references), `channels/<channel>/assets/sound` and `assets/music` (the media libraries). Keys are not copied: `lib/env.py` reads the `.env` of the main checkout.
+The links of a worktree to the main checkout (junctions on Windows, symlinks elsewhere): `node_modules`, `channels/<channel>/episodes` (voice, the guard references), `channels/<channel>/assets/sound` and `assets/music` (the media libraries). A shared folder the main checkout does not have yet (a fresh clone) is created there first, so a worktree never keeps its own copy. Keys are not copied: `lib/env.py` reads the `.env` of the main checkout.
 
 ## A chapter only adds files
 
 - Kits, roles and the config entries of a chapter go into their own files (the table above). The registries find them: `lib/chapter/registry.ts` by folder, `tools/pipeline/common.py` → `Channel` by merging `pipeline/parts/*.json`.
 - A chapter does not edit the shared lists: the channel module, `cast.tsx`, `channel.json`, `voices.json`, `sfx.json`.
-- `cast_words` and `action_verbs` of a part file with `episode` count only in the chapters of that episode. A key already set by the shared config or by another part file is a pipeline error: shared settings change in the engine lane.
-- One role or one kit id in two files is an error in the frame. Two sessions may pick the same name: give a role a mark of its story (`CLERK_S01E02`, not `CLERK`), a kit — its place (`station-kiosk`).
+- A part file with `episode` is merged only into the chapters of that episode — every key of it: role names, roles, pronouns, words, verbs, places, actions, aliases, sounds. A new episode therefore cannot change how the accepted chapters of another one are rebuilt, and `lane.py` counts such a file only for the chapters of its episode. Another episode that needs the same place or action writes it into its own part file again, or the setting moves into the shared config (the engine lane).
+- A part file without `episode` is a shared setting: it is merged into every chapter, and `lane.py` counts it for every accepted chapter (the engine lane).
+- A key already set by the shared config or by another part file of the same episode is a pipeline error: shared settings change in the engine lane.
+- One role or one kit id in two files is an error in the frame. Two sessions may pick the same name: give a role a mark of its story (`CLERK_S01E02`, not `CLERK`), a kit — its place (`station-kiosk`). `lane.py check` and the hook report such a duplicate.
+- The registry loads every kit file (and every role file) on the first lookup: a new file that throws at import breaks the frames of every chapter, not only its own. Draw a few stills of the new kit (precheck) before the commit.
+- `lane.py` reads the kit ids and the roles with `tools/tsx_scan.py` (any quote style, several lines, a list, a `const` of the same file). A file whose `KIT` or `ROLES` it cannot read is counted as used by every accepted chapter and gets a warning: write it as `export const KIT: KitDef = {id: '…', Kit: …}`.
 
 ## The engine lane
 
@@ -69,7 +73,7 @@ A conflict — resolve it in the worktree, `git commit` (the hook does not check
 
 ## Guard
 
-- **The pipeline step** — only the chapters whose frames the uncommitted edit touches. New files of a chapter touch nobody: the step is skipped.
+- **The pipeline step** — only the chapters whose frames the uncommitted edit touches. New files of a chapter touch nobody: the step is skipped. Without the lane hook (`git config core.hooksPath tools/hooks`) committed edits were never guarded, so the step checks every accepted chapter.
 - **The engine lane** — `lane.py guard` before the commit.
 - **After sync** — what came from `main`.
 - **Before handing a chapter in** — `python tools/lane.py guard --base main --events`: everything the branch changes against `main`. If the core is touched, that is every accepted chapter; if the chapter only added files, guard is not needed.
@@ -78,7 +82,7 @@ A conflict — resolve it in the worktree, `git commit` (the hook does not check
 
 ## CPU queue
 
-- Render, precheck, the frame journal of the check step, guard chunks and frame sheets go through `tools/cpu_queue.py`. The queue is shared by every session of the machine, strictly by arrival.
+- Render, precheck, the frame journal of the check step, guard chunks, frame sheets and the video decode of `review_pack.py` go through `tools/cpu_queue.py`. The queue is shared by every session of the machine, strictly by arrival.
 - Capacity — 4 units:
 
   | Step | Units |
@@ -99,7 +103,8 @@ A conflict — resolve it in the worktree, `git commit` (the hook does not check
 `python tools/episode_ws.py remove s01e02` — after `land`:
 
 - first the links (`rmdir`), then the worktree, its code copy and its branch;
-- a branch not merged into `main` is removed only with `--force`.
+- a branch not merged into `main` is removed only with `--force`;
+- a worktree that holds a shared folder as a real folder with content (`episodes/`, a media library) is not removed without `--force`: move the content into the main checkout first.
 
 ## Do not
 

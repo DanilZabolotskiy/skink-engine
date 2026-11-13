@@ -29,6 +29,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools import cpu_queue  # noqa: E402
 from tools.pipeline.common import chapter_video  # noqa: E402
 from tools.sheet import font  # noqa: E402
 
@@ -309,7 +310,10 @@ def build(wd: Path, nparts: int, out: Path, only, video: Path | None, threads: i
                 thumbs[(kind, n)] = img.resize(CELL if kind == 'grid' else VIEW, Image.BILINEAR, reducing_gap=2.0)
 
     t0 = time.time()
-    got = grab(video, need, fps, threads, on_frame) if need else 0
+    got = 0
+    if need:  # the decode of the whole chapter is a heavy CPU step: through the queue of the machine (docs/PARALLEL.md)
+        with cpu_queue.slot('stills', f'review_pack {video.parent.name}', lambda s: print(s, file=sys.stderr, flush=True)):
+            got = grab(video, need, fps, threads, on_frame)
     t_frames = time.time() - t0
     blank = lambda size: Image.new('RGB', size, (40, 0, 0))
     lab_col = [(255, 190, 90), (140, 200, 255)]
@@ -483,7 +487,8 @@ def write_index(plan, tl, wd, video, out):
         L.append(f'| {P["n"]} | {P["shots"][0]["id"]}–{P["shots"][-1]["id"]} ({len(P["shots"])}) | {P["a"]:.1f}–{P["b"]:.1f} | '
                  + (f'`{rel(P["dir"], out)}/pack.md`' if (P['dir'] / 'pack.md').exists() else '—') + ' |')
     reports = [(ck / 'staging' / 'report.md', 'staging on the video (the check step)'), (ck / 'report.md', 'the chapter check: speech, lengths, colour'),
-               (ck / 'staging' / 'sounds.md', 'sounds and events'), (ck / 'arms' / 'report.txt', 'arm poses (hands_check)'),
+               (ck / 'staging' / 'sounds.md', 'sounds and events'), (ck / 'precheck' / 'arms' / 'report.txt', 'arm poses (the precheck step)'),
+               (ck / 'arms' / 'report.txt', 'arm poses (hands_check by hand)'),
                (ck / 'hands', 'sheets of hands and arms (hands_sheet.py)'), (ck / 'guard', 'accepted chapters guard')]
     have = [(p, w) for p, w in reports if p.exists()]
     if have:

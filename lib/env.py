@@ -3,6 +3,7 @@
 An episode worktree (tools/episode_ws.py, docs/PARALLEL.md) has no .env of its own and none is copied there: the keys are read from the
 .env of the main checkout of the repository (git rev-parse --git-common-dir → its parent), in place.
 """
+import functools
 import os
 import subprocess
 from pathlib import Path
@@ -10,8 +11,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
+@functools.lru_cache(maxsize=1)
 def env_file() -> Path:
-    """The key file: the .env of this checkout, otherwise the one of the main checkout (for an episode worktree)."""
+    """The key file: the .env of this checkout, otherwise the one of the main checkout (for an episode worktree). Found once per process."""
     own = ROOT / ".env"
     if own.exists():
         return own

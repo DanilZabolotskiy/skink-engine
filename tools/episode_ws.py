@@ -11,10 +11,12 @@ One Claude Code session = one episode = one worktree. The main checkout (branch 
 tree stays clean; main moves only by a fast-forward from an episode worktree (land), conflicts are resolved in the episode worktree (sync).
 The shared folders are not copied but linked to the main checkout (junctions on Windows, symlinks elsewhere; remove them only with rmdir,
 never recursively — remove does that):
-  node_modules                         — the npm dependencies (npm ci, not in git);
+  node_modules                         — the npm dependencies (npm ci in the main checkout, not in git);
   channels/<channel>/episodes          — the chapter work folders of every episode: voice (a cache), videos and timelines of the accepted
                                          chapters (the guard reference);
-  channels/<channel>/assets/sound, assets/music — the media libraries (not in git).
+  channels/<channel>/assets/sound, assets/music — the media libraries, if git ignores them.
+new creates a missing shared folder in the main checkout first (a fresh clone has no episodes/ yet), so a worktree never gets its own copy;
+remove refuses (without --force) when a worktree still has one of them as a real folder with content: it would go with the worktree.
 Keys (.env) are not copied: lib/env.py reads the .env of the main checkout (git rev-parse --git-common-dir). The code copy for rendering is
 <temp>/<worktree name>-mirror (tools/mirror.py); the CPU queue is one per machine (tools/cpu_queue.py).
 SKINK_MAIN_BRANCH — the merge branch if it is not "main".
@@ -28,6 +30,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from tools.mirror import default_dst  # noqa: E402
+
 EP = re.compile(r'^s\d+e\d+$')
 MAIN = os.environ.get('SKINK_MAIN_BRANCH', 'main')
 
@@ -48,16 +53,23 @@ def main_dir() -> Path:
     return (ROOT / git('rev-parse', '--git-common-dir').strip()).resolve().parent
 
 
-def links(main: Path) -> list:
-    """The shared untracked folders: [(path from the root, what it is)] — only those that exist in the main checkout."""
+def untracked_shared(main: Path, p: str) -> bool:
+    """git ignores the folder and tracks nothing in it: a folder of the machine, shared by every worktree."""
+    ign = subprocess.run(['git', 'check-ignore', '-q', p], cwd=main, capture_output=True).returncode == 0
+    return ign and not git('ls-files', p, cwd=main).strip()
+
+
+def shared(main: Path, wt: Path | None = None) -> list:
+    """The shared folders of a worktree: [(path from the root, what it is)] — node_modules, the episodes/ of every channel (of the main
+    checkout and of the worktree) and the media libraries git ignores; whether they exist or not."""
     out = [('node_modules', 'npm dependencies')]
-    for cd in sorted(p for p in (main / 'channels').iterdir() if p.is_dir()):
-        c = cd.relative_to(main).as_posix()
-        out.append((f'{c}/episodes', 'chapter work folders: voice, guard references'))
-        for media in ('sound', 'music'):
-            if (cd / 'assets' / media).is_dir() and not git('ls-files', f'{c}/assets/{media}', cwd=main).strip():
-                out.append((f'{c}/assets/{media}', f'the {media} library'))
-    return [(p, why) for p, why in out if (main / p).is_dir()]
+    chans = sorted({p.name for base in (main, wt) if base for p in (base / 'channels').glob('*') if p.is_dir()})
+    for c in chans:
+        for p, why in ((f'channels/{c}/episodes', 'chapter work folders: voice, guard references'),
+                       (f'channels/{c}/assets/sound', 'the sound library'), (f'channels/{c}/assets/music', 'the music library')):
+            if untracked_shared(main, p):
+                out.append((p, why))
+    return out
 
 
 def is_link(p: Path) -> bool:
@@ -115,8 +127,6 @@ def ws_path(main: Path, ep: str) -> Path:
     return main.parent / f'{main.name}-{ep}'
 
 
-def mirror_of(wt: Path) -> Path:
-    return Path(os.environ.get('TEMP', '/tmp')) / f'{wt.name}-mirror'  # as tools/mirror.py names it
 
 
 def cmd_new(a):
@@ -127,12 +137,22 @@ def cmd_new(a):
     br = f'ep/{a.ep}'
     if wt.exists():
         raise SystemExit(f'{wt} already exists')
+    if default_dst(wt) == default_dst(main):
+        raise SystemExit(f'{wt} has the folder name of the main checkout: both would render from one code copy {default_dst(wt)} — choose '
+                         'another --path')
     if git('branch', '--list', br, cwd=main).strip():
         print(f'the branch {br} exists — a worktree on it')
         git('worktree', 'add', str(wt), br, cwd=main)
     else:
         git('worktree', 'add', '-b', br, str(wt), a.base, cwd=main)
-    for p, why in links(main):
+    for p, why in shared(main):
+        if not (main / p).is_dir():
+            if p == 'node_modules':
+                print(f'  no node_modules in {main}: run npm ci there, then make the link (mklink /J or ln -s) — npm ci in the worktree '
+                      'makes a copy that goes with it')
+                continue
+            (main / p).mkdir(parents=True)  # a fresh clone: the shared folder is made in the main checkout, never in the worktree
+            print(f'  created {main / p}')
         make_link(wt / p, main / p)
         print(f'  link {p} → {main / p} ({why})')
     # the shared folder of the episode (in the main checkout through the episodes link): the time journal of its chapters
@@ -142,13 +162,18 @@ def cmd_new(a):
             j.parent.mkdir(parents=True, exist_ok=True)
             j.write_text(f'# Episode {a.ep} — time journal of the chapters (skill chapter-flow, "Journal")\n\n'
                          '| chapter | story | start | end | h | renders | result |\n|---|---|---|---|---|---|---|\n', encoding='utf-8')
-    if not git('config', '--get', 'core.hooksPath', cwd=main, check=False).strip() and (wt / 'tools' / 'hooks' / 'pre-commit').exists():
+    hp = git('config', '--get', 'core.hooksPath', cwd=main, check=False).strip()
+    if not hp and (wt / 'tools' / 'hooks' / 'pre-commit').exists():
         git('config', 'core.hooksPath', 'tools/hooks', cwd=main)  # the lane hook (tools/lane.py hook) — for every checkout of the repository
         print('  commit hook: core.hooksPath = tools/hooks (frozen accepted chapters, lanes, the guard stamp)')
+    elif hp.replace('\\', '/').rstrip('/') != 'tools/hooks':
+        print(f'  WARNING: core.hooksPath is already "{hp}" — the lane hook is NOT installed: commits are not checked and the guard step '
+              'checks every accepted chapter. Set it with git config core.hooksPath tools/hooks, or call tools/hooks/pre-commit from your '
+              'own pre-commit hook')
     r = subprocess.run([sys.executable, str(wt / 'tools' / 'api_ref.py'), '--ep', a.ep] + (['--channel', a.channel] if a.channel else []), cwd=wt,
                        capture_output=True, text=True, encoding='utf-8', errors='replace')
     print('  ' + (r.stdout.strip() or r.stderr.strip()[-300:]))
-    print(f'\nthe workplace of episode {a.ep}: {wt}\n  branch {br} from {a.base}; the code copy for rendering — {mirror_of(wt)}\n'
+    print(f'\nthe workplace of episode {a.ep}: {wt}\n  branch {br} from {a.base}; the code copy for rendering — {default_dst(wt)}\n'
           f'  session: open Claude Code in {wt} and start with docs/PARALLEL.md, "Starting an episode"')
 
 
@@ -228,8 +253,17 @@ def cmd_remove(a) -> int:
         dirty = git('status', '--porcelain', cwd=wt, check=False).strip()  # untracked files too (ignored ones are not listed)
         if dirty and not a.force:
             raise SystemExit(f'{wt} has uncommitted edits or new files:\n{dirty[:800]}\n— commit them or --force')
+        sh = shared(main, wt)
+        # a shared folder that is a real folder of the worktree (made before its link existed): git status does not list ignored files,
+        # so without this check the voice cache, the guard references or the sounds would silently go with the worktree
+        own = [p for p, _ in sh if p != 'node_modules' and (wt / p).is_dir() and not is_link(wt / p) and any((wt / p).iterdir())]
+        if own and not a.force:
+            raise SystemExit(f'{wt} has its own folders where links to the main checkout belong — their content would be removed with the '
+                             'worktree:\n  ' + '\n  '.join(own) + f'\n— move the content into the same folders of {main}, or --force')
+        for p in own:
+            print(f'--force: {wt / p} is removed with the worktree')
         # first the links to the main checkout — rmdir, not recursive; then a check that no link is left
-        for p, _ in links(main):
+        for p, _ in sh:
             remove_link(wt / p)
         left = []
         for dp, dn, _ in os.walk(wt):
@@ -242,8 +276,10 @@ def cmd_remove(a) -> int:
         if r.returncode:
             raise SystemExit(f'git worktree remove: {r.stderr.strip()[-600:]}')
         print(f'worktree {wt} removed')
-    m = mirror_of(wt)
-    if m.exists():
+    m = default_dst(wt)
+    if m == default_dst(main):
+        print(f'the code copy {m} has the name of the copy of the main checkout (the same folder name) — not removed')
+    elif m.exists():
         remove_link(m / 'node_modules')
         if (m / 'node_modules').exists():
             raise SystemExit(f'{m / "node_modules"} is not a link — the code copy is not removed')

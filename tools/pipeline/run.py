@@ -12,7 +12,8 @@ parse,timeline,precheck) the timeline is built for the whole chapter (frames and
 the shots of these scenes.
 guard — accepted chapters against their videos (tools/guard.py, docs/PIPELINE.md "Accepted chapters guard") — only those whose frames the
 uncommitted edit touches (tools/lane.py: shared code — all of them, a kit — the chapters with that kit; new files of a chapter — none): the
-edits made for this chapter did not change the accepted ones; --no-guard — without it. The work folder of an accepted chapter is the guard
+edits made for this chapter did not change the accepted ones; without the lane hook (git config core.hooksPath tools/hooks) committed edits
+were never guarded, so every accepted chapter; --no-guard — without it. The work folder of an accepted chapter is the guard
 reference: the pipeline does not write into it (SKINK_UNFREEZE=1 — the owner's decision).
 --go — allow paid TTS of new lines (without it the estimate is printed and the pipeline stops);
 --estimate — no TTS: durations from the text length, silent speech (checks the picture and the timing).
@@ -118,27 +119,37 @@ def chapter(a):
     log(f'done in {time.time() - t0:.0f} s')
 
 
-def guard_step(ch: Channel, wd: Path):
-    """Accepted chapters against their videos: control frames drawn by the current code (tools/guard.py) — only the chapters whose frames
-    the uncommitted edit touches (tools/lane.py; what is committed in the engine lane was checked before its commit). The report and the pair
-    sheets go to this chapter's folder (check/guard/<accepted chapter>): the folders of the accepted chapters do not change."""
+def guard_dirs(ch: Channel) -> tuple:
+    """The accepted chapters the guard step checks → ([work folders], why). With the lane hook installed (core.hooksPath tools/hooks) a
+    committed engine-lane edit was guarded before its commit, so only the chapters whose frames the uncommitted edit touches (tools/lane.py).
+    Without the hook (a plain checkout) or without git — every accepted chapter: a committed edit of shared code was never guarded."""
     dirs = [str(p) for p in accepted_dirs(ch.dir)]
     try:
         from tools import lane
+        if not lane.hook_installed():
+            return dirs, ('the lane hook is not installed (git config core.hooksPath tools/hooks), so committed edits were not guarded — every '
+                          'accepted chapter')
         res = lane.analyse(argparse.Namespace(staged=False, since=None, base=None))
         hit = {c for r in res['rows'] for c in r['frames']}
-        dirs = [str(c['wd']) for c in res['usage'].chapters if c['label'] in hit]
-        log(f'accepted chapters guard: the uncommitted edit touches the frames of {len(dirs)} of {len(res["usage"].chapters)} (tools/lane.py)')
+        sel = [str(c['wd']) for c in res['usage'].chapters if c['label'] in hit]
+        return sel, f'the uncommitted edit touches the frames of {len(sel)} of {len(res["usage"].chapters)} (tools/lane.py)'
     except (Exception, SystemExit) as e:  # no git — check them all
-        log(f'accepted chapters guard: tools/lane.py failed ({str(e)[:120]}) — checking all of them')
+        return dirs, f'tools/lane.py failed ({str(e)[:120]}) — every accepted chapter'
+
+
+def guard_step(ch: Channel, wd: Path):
+    """Accepted chapters against their videos: control frames drawn by the current code (tools/guard.py) of the chapters guard_dirs picks.
+    The report and the pair sheets go to this chapter's folder (check/guard/<accepted chapter>): the folders of the accepted chapters do not
+    change."""
+    dirs, why = guard_dirs(ch)
+    log(f'accepted chapters guard: {why}')
     gd = wd / 'check' / 'guard'
     if gd.exists():
         shutil.rmtree(gd)  # old guard reports of this chapter are not passed off as new ones (the folder of the chapter being built)
     gd.mkdir(parents=True)
     (gd / 'report.md').write_text('# Accepted chapters guard (the guard step)\n\n' + (
-        f'- Checked (the uncommitted edit touches their frames, tools/lane.py): {len(dirs)} — {", ".join(Path(d).name for d in dirs)}; reports — '
-        '<chapter>/report.md\n' if dirs else '- Not needed: the uncommitted edit does not touch the frames of accepted chapters (tools/lane.py check)\n'),
-        encoding='utf-8')
+        f'- Checked ({why}): {len(dirs)} — {", ".join(Path(d).name for d in dirs)}; reports — <chapter>/report.md\n' if dirs else
+        '- Not needed: the uncommitted edit does not touch the frames of accepted chapters (tools/lane.py check)\n'), encoding='utf-8')
     if not dirs:
         log('accepted chapters guard: not needed')
         return

@@ -21,7 +21,6 @@ python tools/pipeline/staging.py verbs <work folder> [--shots 04.02]      # "lin
 python tools/guard.py --accepted [--events]                               # accepted chapters against their videos (below)
 python tools/lane.py guard [--events]                                     # the same — only the chapters an edit touches (docs/PARALLEL.md)
 python tools/pipeline/stage_check.py <work folder> [--shots 04.01] [--no-video]   # staging checks alone
-python tools/guard.py --accepted [--events]                               # accepted chapters against their videos
 ```
 
 Without `--go` the pipeline prints the estimate of new lines (characters and credits) and stops. Voiced lines are cached in the work folder and are not paid twice.
@@ -56,7 +55,7 @@ An `ENVIRONMENT` line in precheck is a browser failure, not staging: repeat the 
 
 ## Channel config — `channels/<channel>/pipeline/`
 
-- **Part files** `pipeline/parts/<name>.json` (an episode usually has one: `parts/s01e02.json`) are merged into the files below on load (`tools/pipeline/common.py` → `Channel`): `{"episode": "s01e02", "channel": {…}, "voices": {…}, "sfx": {…}, "music": {…}}`. New keys are added, dicts merge deeply; `cast_words` and `action_verbs` of a file with `episode` count only in the chapters of that episode; a key already set to another value is an error (shared settings change in the engine lane). A chapter writes its places, roles, words, aliases and sounds there and does not edit the shared files ([PARALLEL.md](PARALLEL.md)).
+- **Part files** `pipeline/parts/<name>.json` (an episode usually has one: `parts/s01e02.json`) are merged into the files below on load (`tools/pipeline/common.py` → `Channel`): `{"episode": "s01e02", "channel": {…}, "voices": {…}, "sfx": {…}, "music": {…}}`. New keys are added, dicts merge deeply, `cast_words` and `action_verbs` are appended; a file with `episode` is merged only into the chapters of that episode (all its keys), a file without it — into every chapter; a key already set to another value is an error (shared settings change in the engine lane). A chapter writes its places, roles, words, aliases and sounds there and does not edit the shared files ([PARALLEL.md](PARALLEL.md)).
 - `channel.json`:
   - `language` — speech language (`en`, `ko`…); `fps`, `width`, `height` — the frame of the chapter; `style` — the drawing style of the figures (a folder of `lib/styles`; required).
   - `presets` — preset → class (`day` / `night` / `climax`…), `preset_aliases`, `preset_share` (share of an episode per class), `climax_seconds` (optional: `[min, max]` seconds of the climax class per chapter).

@@ -27,8 +27,11 @@ Read this file, then [docs/PIPELINE.md](docs/PIPELINE.md), [docs/STAGING.md](doc
 ```
 npm ci
 pip install -r requirements.txt
+git config core.hooksPath tools/hooks   # the lane hook: frozen accepted chapters, guard stamps (docs/PARALLEL.md)
 cp .env.example .env        # only if paid ElevenLabs calls are allowed; never print the key
 ```
+
+The hook matters once a channel has accepted chapters: without it a committed edit of shared code is never guarded, so the `guard` step of the pipeline checks every accepted chapter.
 
 ## Commands
 
