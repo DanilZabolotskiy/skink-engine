@@ -1,0 +1,28 @@
+{
+  "name": "skink-engine",
+  "private": true,
+  "version": "0.1.0",
+  "description": "2D animated video engine on top of Remotion: characters, staging, pipeline and checks",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "studio": "remotion studio remotion/index.ts",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "remotion": "4.0.541",
+    "@remotion/bundler": "4.0.541",
+    "@remotion/cli": "4.0.541",
+    "@remotion/renderer": "4.0.541",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/react": "19.2.2"
+  },
+  "allowScripts": {
+    "esbuild": true
+  }
+}

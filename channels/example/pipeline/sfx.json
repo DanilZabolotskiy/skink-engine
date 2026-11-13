@@ -1,0 +1,13 @@
+{
+ "_doc": "Sound library of the channel. sounds — ready files assets/sound/<id>.mp3 (not in git); planned — to be generated (ElevenLabs sound effects, only on an explicit command of the owner: it costs credits). A script sound finds an entry by id or match (a regex over the name). Anything not in the library is silence. The example ships no audio files: every sound below is planned, so the mix is silent and the sounds are listed in audio/sfx_missing.md.",
+ "default_lufs": {"loop": -32, "oneshot": -24},
+ "credits_per_second": 40,
+ "ignore": "^silence$|no sound",
+ "sounds": {},
+ "planned": {
+  "amb_cafe": {"seconds": 8, "loop": true, "bed": true, "prompt": "Quiet small café room tone, a distant espresso machine hiss, soft cups, seamless loop", "match": "^amb_cafe$|room tone"},
+  "paper": {"seconds": 1.2, "prompt": "A small paper card slid across a wooden counter", "match": "^paper$|card slide"},
+  "stamp": {"seconds": 0.8, "prompt": "Rubber stamp pressed firmly on a paper card on a wooden counter, one thud", "match": "^stamp$"},
+  "step_soft": {"seconds": 0.4, "prompt": "One soft footstep on a wooden floor", "match": "^step_soft$"}
+ }
+}

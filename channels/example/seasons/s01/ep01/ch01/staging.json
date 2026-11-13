@@ -1,0 +1,18 @@
+{
+ "01.01": {"events": [
+  {"do": "walk", "who": "OSCAR", "u": [0.08, 0.72], "from": [2.0, 5.6], "to": [0.95, 3.4], "shoe": "soft"}
+ ]},
+ "01.02": {"events": [
+  {"do": "look", "who": "MIRA", "to": "oscar", "u": [0.12, 0.6], "stay": true}
+ ]},
+ "01.03": {"events": [
+  {"do": "gesture", "who": "OSCAR", "pose": "count", "n": 3, "u": [0.12, 0.88]}
+ ]},
+ "02.01": {"events": [
+  {"do": "paper.slide", "obj": "card:loyalty", "u": 0.1}
+ ]},
+ "02.02": {"events": [
+  {"do": "stamp.press", "obj": "card:loyalty", "u": [0.2, 0.42]},
+  {"do": "stamp.lift", "obj": "card:loyalty", "u": [0.5, 0.68]}
+ ]}
+}

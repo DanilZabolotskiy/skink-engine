@@ -1,0 +1,16 @@
+{
+ "_doc": "Script speaker → ElevenLabs voice. Put your own voice ids here (ElevenLabs voice library); a voice changes with one line. Without a key run the pipeline with --estimate (durations from the text, silent speech).",
+ "model": "eleven_v4_turbo",
+ "language": "en",
+ "settings": {"stability": 0.5, "similarity_boost": 0.8},
+ "seed": 7,
+ "repeat_tags": true,
+ "credits_per_char": {"eleven_v4_turbo": 0.22, "eleven_v4": 0.44},
+ "speakers": {
+  "NARRATOR": {"voice_id": "YOUR_NARRATOR_VOICE_ID", "role": "narrator", "lufs": -17},
+  "MIRA": {"voice_id": "YOUR_MIRA_VOICE_ID", "role": "barista", "lufs": -18},
+  "OSCAR": {"voice_id": "YOUR_OSCAR_VOICE_ID", "role": "a regular", "lufs": -18}
+ },
+ "aliases": {},
+ "effects": {"phone": {"band": [300, 3400], "norm_db": -18, "quiet": true}}
+}

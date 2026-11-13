@@ -1,0 +1,52 @@
+# The repository holds code, configs and docs. Work folders, renders and media stay on each machine.
+
+# Secrets
+.env
+*.env
+!.env.example
+._*
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+out/
+.remotion/
+.bundle-*/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editors and agent tooling
+.vscode/
+.idea/
+.claude/
+
+# Chapter work folders (renders, voice, checks)
+channels/*/episodes/
+
+# Images, sound, video
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.mp3
+*.wav
+*.ogg
+*.m4a
+*.mp4
+*.mov
+*.mkv
+*.webm
+# docs images (the README screenshot)
+!docs/*.png
+!docs/*.jpg
+
+# Logs, archives
+*.log
+*.zip
+*.7z

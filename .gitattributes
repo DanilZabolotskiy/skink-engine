@@ -1,0 +1,6 @@
+# Line endings — LF everywhere (Windows and macOS)
+* text=auto eol=lf
+*.ttf binary
+*.otf binary
+*.png binary
+*.jpg binary
