@@ -9,6 +9,7 @@ from the code copy by timeline.json, so a gesture fix does not cost a full rende
 2. Arm, neck and head-from-behind poses (tools/hands_check.mjs --no-png), in parallel with the journal → check/precheck/arms/report.txt.
 A browser failure (it did not start even after a retry, tools/remotion.mjs) is an environment error: printed separately, not counted as
 staging. precheck does not touch the report of the check step (check/staging/): that one is made from the video.
+The step goes through the CPU queue of the machine (tools/cpu_queue.py, a precheck place): the wait is written to the run log.
 """
 import json
 import subprocess
@@ -16,7 +17,8 @@ import time
 from pathlib import Path
 
 from tools.pipeline import stage_check
-from tools.pipeline.common import Channel, log, node_exe, rel, save_json
+from tools import cpu_queue
+from tools.pipeline.common import ROOT, Channel, log, node_exe, rel, save_json
 
 ENV_EXIT = stage_check.ENV_EXIT
 
@@ -35,6 +37,11 @@ def hands_rows(rep: dict) -> list:
 
 def run(tl: dict, wd: Path, ch: Channel, shots: list | None = None, hands: bool = True, workers: int = 2) -> dict:
     """shots — only these shots (None — all shots of the timeline). → {'errors': [...], 'env': [...], 'report': path}."""
+    with cpu_queue.slot('precheck', f'{ROOT.name} {wd.name}', log):
+        return _run(tl, wd, ch, shots, hands, workers)
+
+
+def _run(tl: dict, wd: Path, ch: Channel, shots: list | None, hands: bool, workers: int) -> dict:
     from tools import mirror
     t0 = time.time()
     out = wd / 'check' / 'precheck'

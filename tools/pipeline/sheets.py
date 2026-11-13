@@ -16,8 +16,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from tools import mirror  # noqa: E402
-from tools.pipeline.common import channel_of, load_json, node_exe  # noqa: E402
+from tools import cpu_queue, mirror  # noqa: E402
+from tools.pipeline.common import ROOT, channel_of, load_json, node_exe  # noqa: E402
 from tools.sheet import make_sheet  # noqa: E402
 
 
@@ -69,8 +69,9 @@ def main():
     if a.clean:
         props = cd / 'clean_props.json'
         props.write_text(json.dumps({'timeline': tl, 'clean': True}, ensure_ascii=False), encoding='utf-8')
-    r = subprocess.run([node_exe(), str(Path(m) / 'tools' / 'stills.mjs'), f'{channel_of(tl, wd)}-chapter', str(pref), ','.join(str(v) for v in frames.values()),
-                        str(props)], cwd=m, capture_output=True, text=True, encoding='utf-8', errors='replace')
+    with cpu_queue.slot('stills', f'{ROOT.name} sheets {wd.name}', lambda s: print(s, flush=True)):  # the CPU queue of the machine
+        r = subprocess.run([node_exe(), str(Path(m) / 'tools' / 'stills.mjs'), f'{channel_of(tl, wd)}-chapter', str(pref),
+                            ','.join(str(v) for v in frames.values()), str(props)], cwd=m, capture_output=True, text=True, encoding='utf-8', errors='replace')
     if r.returncode:
         sys.exit('stills.mjs: ' + (r.stderr or r.stdout)[-3000:])
     png = {sid: f'{pref}_{f}.png' for sid, f in frames.items()}

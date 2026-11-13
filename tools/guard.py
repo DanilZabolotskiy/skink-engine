@@ -12,7 +12,8 @@ python tools/guard.py --accepted [channel] | <chapter folder> [<chapter folder> 
                       [--scenes 01,02] [--base DIR] [--no-video] [--video FILE] [--reuse] [--sheets bad|all|none] [--thr 24] [--blob 40]
                       [--base-thr 8] [--base-blob 25]
 
-  --accepted     all accepted chapters: the list channels/<channel>/accepted.txt (a line — a chapter folder relative to the channel folder; without a name — all channels)
+  --accepted     all accepted chapters: the lists channels/<channel>/accepted/<episode>.txt (a line — a chapter folder relative to the channel
+                 folder; without a name — all channels); only those an edit touches — tools/lane.py guard (docs/PARALLEL.md)
   <chapter folder>  work folder of an accepted chapter: timeline.json and its video (channels/<channel>/episodes/<series>/<lang>/chNN/chNN.mp4,
                  or chapter.mp4 in a run.py --work folder)
   --out          where to write: <out>/<chNN> (default <chapter folder>/check/guard)
@@ -48,8 +49,8 @@ from PIL import Image, ImageDraw
 from scipy import ndimage
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tools import mirror  # noqa: E402
-from tools.pipeline.common import ROOT, channel_of, chapter_video, load_json, node_exe, save_json  # noqa: E402
+from tools import cpu_queue, mirror  # noqa: E402
+from tools.pipeline.common import ROOT, accepted_dirs, channel_of, chapter_video, load_json, node_exe, save_json  # noqa: E402
 from tools.sheet import font  # noqa: E402
 
 W, H = 1920, 1080  # frame size of the chapter being checked (set from timeline.json)
@@ -80,7 +81,8 @@ def control_frames(tl: dict, at: list, events: bool, shots=None, scenes=None) ->
 
 
 def render(tl_path: Path, frames: list, new_dir: Path, reuse: bool):
-    """Frames of the current code: tools/stills.mjs from the code copy (tools/mirror.py; an own copy — SKINK_MIRROR), composition <channel>-chapter."""
+    """Frames of the current code: tools/stills.mjs from the code copy (tools/mirror.py; an own copy — SKINK_MIRROR), composition <channel>-chapter.
+    Every chunk goes through the CPU queue of the machine (tools/cpu_queue.py, a stills place): steps of other sessions run between chunks."""
     new_dir.mkdir(parents=True, exist_ok=True)
     need = [f for f in frames if not (reuse and (new_dir / f'f_{f}.png').exists())]
     if not need:
@@ -88,8 +90,9 @@ def render(tl_path: Path, frames: list, new_dir: Path, reuse: bool):
     m = mirror.sync()
     for k in range(0, len(need), CHUNK):
         part = need[k:k + CHUNK]
-        r = subprocess.run([node_exe(), str(Path(m) / 'tools' / 'stills.mjs'), f'{channel_of(load_json(tl_path), tl_path)}-chapter', str(new_dir / 'f'), ','.join(map(str, part)),
-                            str(tl_path.resolve())], cwd=m, capture_output=True, text=True, encoding='utf-8', errors='replace')
+        with cpu_queue.slot('stills', f'{ROOT.name} guard {tl_path.parent.name} {k // CHUNK + 1}/{-(-len(need) // CHUNK)}', lambda s: print(s, flush=True)):
+            r = subprocess.run([node_exe(), str(Path(m) / 'tools' / 'stills.mjs'), f'{channel_of(load_json(tl_path), tl_path)}-chapter', str(new_dir / 'f'),
+                                ','.join(map(str, part)), str(tl_path.resolve())], cwd=m, capture_output=True, text=True, encoding='utf-8', errors='replace')
         if r.returncode:
             sys.exit('stills.mjs: ' + (r.stderr or r.stdout)[-3000:])
 
@@ -282,10 +285,10 @@ def main():
     a.shots = [x.strip() for x in a.shots.split(',')] if a.shots else None
     a.scenes = [x.strip().zfill(2) for x in a.scenes.split(',')] if a.scenes else None
     if a.accepted:
-        for lst in sorted((ROOT / 'channels').glob(f'{a.accepted}/accepted.txt')):
-            a.work += [str(lst.parent / ln.split('#')[0].strip()) for ln in lst.read_text(encoding='utf-8').splitlines() if ln.split('#')[0].strip()]
+        for cd in sorted(p for p in (ROOT / 'channels').glob(a.accepted) if p.is_dir()):
+            a.work += [str(w) for w in accepted_dirs(cd)]
     if not a.work:
-        sys.exit('no chapters: a chapter folder or --accepted (channels/<channel>/accepted.txt)')
+        sys.exit('no chapters: a chapter folder or --accepted (channels/<channel>/accepted/*.txt)')
     if a.video and len(a.work) > 1:
         sys.exit('--video — only for one chapter')
     bad = 0

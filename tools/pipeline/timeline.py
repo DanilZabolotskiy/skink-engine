@@ -541,7 +541,7 @@ def build(scenes: dict, clips: dict, ch: Channel, staging: dict | None = None, u
         x['lib'] = x['id'] if x['id'] in ready else None
         x['file'] = ready[x['id']]['file'] if x['lib'] else None
     total = frames(t, fps)
-    return {'channel': ch.id, 'style': cfg.get('style'), 'fps': fps, 'width': cfg['width'], 'height': cfg['height'], 'frames': total, 'duration': round(total / fps, 4),
+    return {'channel': ch.id, 'episode': ch.ep, 'style': cfg.get('style'), 'fps': fps, 'width': cfg['width'], 'height': cfg['height'], 'frames': total, 'duration': round(total / fps, 4),
             'title': scenes.get('title', ''), 'lang': scenes.get('lang'), 'shots': shots, 'lines': lines, 'cues': cues, 'sfx': sfx,
             'music': music, 'warnings': sorted(set(warns), key=warns.index), 'stage_issues': stage_issues}
 

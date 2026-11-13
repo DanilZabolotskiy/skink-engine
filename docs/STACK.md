@@ -21,6 +21,6 @@ Flags: `--gl=swangle --concurrency=4 --pixel-format=yuv420p --color-space=bt709`
 
 Measured on an 8-core desktop CPU: about 0.9–2.4 s of render per 1 s of video depending on the kit; a single still ≈ 0.5–1 s.
 
-**Render from a copy of the code.** On some Windows machines rendering from the project folder was ~7 times slower than from the temp folder (likely antivirus file scanning). `tools/mirror.py` copies the code and fonts to `<temp>/skink-engine-mirror` (`SKINK_MIRROR` — another folder) and links `node_modules`; all pipeline tools render from there. A repeated sync copies only what changed.
+**Render from a copy of the code.** On some Windows machines rendering from the project folder was ~7 times slower than from the temp folder (likely antivirus file scanning). `tools/mirror.py` copies the code and fonts to `<temp>/<project folder>-mirror` (`SKINK_MIRROR` — another folder; an episode worktree gets its own copy) and links `node_modules`; all pipeline tools render from there. A repeated sync copies only what changed.
 
 Remotion renders no sound: ffmpeg mixes and muxes it (`tools/pipeline/audio.py`).

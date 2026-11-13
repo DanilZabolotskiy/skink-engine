@@ -17,7 +17,8 @@ import {CastMember, KitProps} from '../../../../lib/chapter/types';
 import {propMark} from '../../../../lib/staging/journal';
 import {Glow, Vignette} from '../../../../lib/fx/fx';
 import {smooth} from '../../../../lib/anim';
-import {CAST} from '../cast';
+import type {KitDef} from '../../../../lib/chapter/registry';
+import {personFor} from '../cast';
 import {Pal, palOf} from '../palette';
 
 const ROOM = {x0: -3, x1: 3, z1: 6, h: 2.8};
@@ -27,7 +28,7 @@ const WIN = {x0: -2.75, x1: -2.0, y0: 0.95, y1: 2.15};
 const LAMPS = [-1.2, 0.1];
 const SPOTS = {oscarCounter: [0.95, 3.4] as [number, number], oscarDoor: [2.0, 5.6] as [number, number], miraBar: [-0.55, 4.85] as [number, number]};
 
-const head = (who: string, x: number, z: number): V3 => [x, CAST[who].h - 0.13, z];
+const head = (who: string, x: number, z: number): V3 => [x, (personFor(who)?.h ?? 1.7) - 0.13, z];
 
 function camOf(view: string, k: number, W: number, H: number): Cam {
   if (view === 'close-mira') return {pos: [-0.2, 1.5, 3.0], yaw: -11, pitch: -1, fov: 34, W, H};
@@ -159,3 +160,6 @@ export const CafeKit: React.FC<KitProps> = ({shot, lt, f}) => {
     </AbsoluteFill>
   );
 };
+
+/** The kit in the channel's kit registry (lib/chapter/registry.ts; channel.json → locations.cafe.kit). */
+export const KIT: KitDef = {id: 'cafe', Kit: CafeKit};

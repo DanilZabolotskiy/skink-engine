@@ -631,11 +631,11 @@ if __name__ == '__main__':
     a = sys.argv[1:]
     if len(a) < 2 or a[0] != 'verbs':
         sys.exit('python tools/pipeline/staging.py verbs <work folder | timeline.json> [--shots …] [--md file.md]')
-    from tools.pipeline.common import Channel, channel_of_work  # noqa: E402
+    from tools.pipeline.common import Channel, channel_of_work, episode_of_work  # noqa: E402
     p = Path(a[1]).resolve()
     tlp = p if p.suffix == '.json' else p / 'timeline.json'
     tl = load_json(tlp)
-    chn = Channel(channel_of_work(tlp.parent, tl))
+    chn = Channel(channel_of_work(tlp.parent, tl), episode_of_work(tlp.parent, tl))
     opt = lambda k: a[a.index(k) + 1] if k in a else None
     only = set(opt('--shots').split(',')) if opt('--shots') else None
     res = [i for i in verb_issues(tl, load_actions(chn.cfg), chn.sfx) if not only or i['shot'] in only]

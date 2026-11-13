@@ -18,6 +18,8 @@ python tools/pipeline/run.py episode channels/<channel>/episodes/s01e01/en   # j
 python tools/pipeline/sfx_list.py <script.md>                             # chapter sounds, the generation estimate → audio/sfx_needed.md
 python tools/pipeline/sheets.py <work folder> --scenes 05,08 [--at 0.2]   # sheets from stills without rendering a video
 python tools/pipeline/staging.py verbs <work folder> [--shots 04.02]      # "line → event" check alone
+python tools/guard.py --accepted [--events]                               # accepted chapters against their videos (below)
+python tools/lane.py guard [--events]                                     # the same — only the chapters an edit touches (docs/PARALLEL.md)
 python tools/pipeline/stage_check.py <work folder> [--shots 04.01] [--no-video]   # staging checks alone
 python tools/guard.py --accepted [--events]                               # accepted chapters against their videos
 ```
@@ -38,9 +40,11 @@ Flags: `--lang en` — speech language (default: `channel.json → language`), `
 | audio | Mix of speech, beds, sounds and music; master loudness | `audio.py` | `audio/mix.wav`, `speech.wav`, `amb.wav`, `sfx_missing.md` |
 | assemble | Video without re-encoding + AAC 192k; `.srt` | `audio.py` | `chNN.mp4`, `chNN.srt` |
 | check | Frame sheets, speech recognition, speech vs frames, lengths, preset shares, music, colour, staging on the video (jumps, jitter, drift, camera jerk, sound on a still frame, ambience dropout, voice band, quiet line) | `check.py`, `stage_check.py`, `color_check.py` | `check/report.md`, `check/sheet_*.jpg`, `check/staging/report.md`, `sounds.md` |
-| guard | Accepted chapters of the channel (`accepted.txt`) against their videos: control frames drawn by the current code. Not run in trial runs (`--until`, `--scenes`, `--estimate`) | `tools/guard.py` | `check/guard/<chapter>/report.md`, `pairs/` |
+| guard | Accepted chapters (`accepted/<episode>.txt`) against their videos: control frames drawn by the current code — only the chapters whose frames the uncommitted edit touches (`tools/lane.py`: shared code — all, a kit — the chapters with it; new files of a chapter — none, the step is skipped). Not run in trial runs (`--until`, `--scenes`, `--estimate`) | `tools/guard.py`, `tools/lane.py` | `check/guard/report.md`, `<chapter>/report.md`, `pairs/` |
 
-Work folder (not in git): `channels/<channel>/episodes/<s01e01>/<lang>/<chNN>/` for `seasons/s01/ep01/chNN/script.md`; for drafts — `episodes/_test/<folder>/<lang>/`.
+Work folder (not in git): `channels/<channel>/episodes/<s01e01>/<lang>/<chNN>/` for `seasons/s01/ep01/chNN/script.md`; for drafts — `episodes/_test/<folder>/<lang>/`. The work folder of an accepted chapter is the guard reference: the pipeline does not write into it (an error; an edit of an accepted chapter — the owner's decision, `SKINK_UNFREEZE=1`).
+
+The heavy steps — precheck, render, the frame journal of the check step, guard chunks, sheets — go through the CPU queue of the machine (`tools/cpu_queue.py`, [PARALLEL.md](PARALLEL.md), "CPU queue"); a wait is written to the log: `CPU queue: … waits`.
 
 ## Edit loop
 
@@ -52,10 +56,11 @@ An `ENVIRONMENT` line in precheck is a browser failure, not staging: repeat the 
 
 ## Channel config — `channels/<channel>/pipeline/`
 
+- **Part files** `pipeline/parts/<name>.json` (an episode usually has one: `parts/s01e02.json`) are merged into the files below on load (`tools/pipeline/common.py` → `Channel`): `{"episode": "s01e02", "channel": {…}, "voices": {…}, "sfx": {…}, "music": {…}}`. New keys are added, dicts merge deeply; `cast_words` and `action_verbs` of a file with `episode` count only in the chapters of that episode; a key already set to another value is an error (shared settings change in the engine lane). A chapter writes its places, roles, words, aliases and sounds there and does not edit the shared files ([PARALLEL.md](PARALLEL.md)).
 - `channel.json`:
   - `language` — speech language (`en`, `ko`…); `fps`, `width`, `height` — the frame of the chapter; `style` — the drawing style of the figures (a folder of `lib/styles`; required).
   - `presets` — preset → class (`day` / `night` / `climax`…), `preset_aliases`, `preset_share` (share of an episode per class), `climax_seconds` (optional: `[min, max]` seconds of the climax class per chapter).
-  - `locations.<place>` — `kit` (a kit of the channel module or `null` — a stub), `about`, `views` (`[{"cam": regex, "on": regex, "view": name}]` — the first match over the camera line and ON SCREEN gives the kit view; otherwise `close` if the camera line says close, else `wide`), `ambience` (id of a loop in `sfx.json` or `{preset class: id}`), `drift` (the kit always moves the camera).
+  - `locations.<place>` — `kit` (the id of a kit — a file `chapter/kits/<file>.tsx` with an export `KIT`, or `null` — a stub), `about`, `views` (`[{"cam": regex, "on": regex, "view": name}]` — the first match over the camera line and ON SCREEN gives the kit view; otherwise `close` if the camera line says close, else `wide`), `ambience` (id of a loop in `sfx.json` or `{preset class: id}`), `drift` (the kit always moves the camera).
   - `names` — `{"ROLE": [regex…]}` — roles found by name in script lines; `lead` — the main role (a clause without a name gives it the emotion); `cast` — roles with a ready figure; `cast_words` — `[{"re", "who", "not"}]` — roles found by words ("the guard"); `cast_pron` — pronouns of roles (`she`, `it`; the rest — `he`); `extras` — roles without a figure: `prefix` of their ids in ON SCREEN and `words` that find them in a line (drawn as stand-ins with a stub tag).
   - `actions`, `poses`, `action_verbs` — channel additions to `lib/staging/actions.json`.
   - `hud` — `stamp` (optional: a stamp under the title bar in every shot), `episode_plate` (`"Episode {ep}"`).
@@ -65,7 +70,7 @@ An `ENVIRONMENT` line in precheck is a browser failure, not staging: repeat the 
 - `music.json` — tracks, moods (keys → track and segment), loudness, ducking.
 - `sfx.json` — the sound library: `sounds` (ready files `assets/sound/<id>.mp3`), `planned` (to be generated: prompt, length, loop), `match`, `needs` / `see` (a loop that needs a visible source), `ignore`. A sound not in the library is silence.
 - `colors.json` (optional) — reference colour stats per preset for the colour check (`tools/pipeline/color_check.py`).
-- `../accepted.txt` (optional) — accepted chapters for the guard step.
+- `../accepted/<episode>.txt` (optional; the older single `../accepted.txt` works too) — accepted chapters for the guard step, a file per episode.
 
 ## Script: what the pipeline understands
 
@@ -73,7 +78,7 @@ An `ENVIRONMENT` line in precheck is a browser failure, not staging: repeat the 
 - **Speech tags.** `VO (NARRATOR, [dry])` — the tag is repeated before every phrase, because a tag works only until the first pause.
 - **Staging by script words.** The camera line gives the view (`views` of the location) and the move (`push-in`, `pull back`, `pan`, `shake`; without them the shot is static). Who is in the frame — `ON SCREEN` and the camera line by `names` / `cast_words`. Emotions — `calm`, `wary`, `scared`, `relieved` and synonyms (`timeline.py → EMO_WORDS`) or face names of `lib/character/emotions.ts`; a chain `calm → wary` spreads evenly over the shot.
 - **Motion and its sound come from events in `staging.json`** ([STAGING.md](STAGING.md)), not from words.
-- **TEXT.** `title bar "…"` — the title bar (stays until changed; no title bar — no bar); `counter 1–5, 2 lit` (`crossed` — crossed out, `counter off` — no cells); `stamp "…"` — a stamp under the bar; `place caption "place · time"` — a place tag for 5 s; `episode "…"` — the episode plate (chapter 1 gets "Episode N" automatically); anything else (`document "…"`, `sign "…"`) — a text card, unless the kit draws it itself (`kitCards`).
+- **TEXT.** `title bar "…"` — the title bar (stays until changed; no title bar — no bar); `counter 1–5, 2 lit` (`crossed` — crossed out, `counter off` — no cells); `stamp "…"` — a stamp under the bar; `place caption "place · time"` — a place tag for 5 s; `episode "…"` — the episode plate (chapter 1 gets "Episode N" automatically); anything else (`document "…"`, `sign "…"`) — a text card, unless the kit draws it itself (`KIT.cards`).
 - **SFX.** Sounds separated by `;`. `(loop)` — a loop until the end of the scene or `(stop)`; `@2.5` — second from the shot start (a manual binding). A one-shot sound without an event is a check error.
 - **Mouth.** A figure in the frame opens its mouth by the syllables of its own line (character timings).
 - **MUSIC.** In the SFX line: `MUSIC: <mood>, <seconds>s` — 3–15 s; a manual mark `MUSIC: hit, 6s, A@41.5`.
@@ -81,7 +86,8 @@ An `ENVIRONMENT` line in precheck is a browser failure, not staging: repeat the 
 ## Render
 
 - Remotion on the CPU, `--gl=swangle`, h264 yuv420p bt709, scene by scene with a cache.
-- The code is copied to `<temp>/skink-engine-mirror` (`tools/mirror.py`, `node_modules` as a link; `SKINK_MIRROR` — another folder). See [STACK.md](STACK.md).
+- The code is copied to `<temp>/<project folder>-mirror` (`tools/mirror.py`, `node_modules` as a link; an episode worktree gets its own copy; `SKINK_MIRROR` — another folder). See [STACK.md](STACK.md).
+- The render goes through the CPU queue: one render per machine, next to it only a chunk of stills ([PARALLEL.md](PARALLEL.md), "CPU queue").
 - Remotion renders no sound; ffmpeg mixes it.
 
 ## Sound
@@ -101,7 +107,9 @@ An `ENVIRONMENT` line in precheck is a browser failure, not staging: repeat the 
 
 ## Accepted chapters guard — `tools/guard.py`
 
-An edit of shared code must not change accepted chapters. The reference is the accepted video `chNN.mp4` and its `timeline.json`; the list — `channels/<channel>/accepted.txt` (a line — a chapter work folder relative to the channel folder).
+An edit of shared code must not change accepted chapters. The reference is the accepted video `chNN.mp4` and its `timeline.json`; the lists — `channels/<channel>/accepted/<episode>.txt`, a file per episode (a line — a chapter work folder relative to the channel folder, `#` — a comment).
+
+Which accepted chapters an edit touches — `tools/lane.py` ([PARALLEL.md](PARALLEL.md)): the core (the static imports of `remotion/index.ts`, the render path) — all of them; a kit or a role file — the chapters that use it; the config and `tools/pipeline/*.py` change no frames — for them the rebuild `lane.py retime` (the timelines of the accepted chapters stay the same). `python tools/lane.py guard [--events]` — guard of the touched chapters only and a stamp for an engine-lane commit; `python tools/lane.py usage <file>` — who uses a file.
 
 ```
 python tools/guard.py --accepted                  # the middle of every shot of all accepted chapters against their videos

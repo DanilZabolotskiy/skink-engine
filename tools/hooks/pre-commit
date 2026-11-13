@@ -1,0 +1,4 @@
+#!/bin/sh
+# Commit hook (git config core.hooksPath tools/hooks — set by tools/episode_ws.py new): frozen accepted chapters, one lane per commit,
+# a guard stamp for an engine-lane commit — tools/lane.py hook, docs/PARALLEL.md. SKINK_LANE=off — only by the owner's decision.
+exec python tools/lane.py hook

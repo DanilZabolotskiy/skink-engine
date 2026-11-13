@@ -527,15 +527,16 @@ def run_layout(tl: dict, wd: Path, out: Path, shots: list | None = None, workers
     Event frames with "png" are saved to <out>/png (960×540) — pixels for the "event without a visible change" check.
     workers — frames at a time (pages of one browser). The browser did not start even after a retry (code ENV_EXIT, a line "ENVIRONMENT:"
     in layout.log) — not a staging error: the reason goes to env (if given), None is returned."""
-    from tools import mirror
-    from tools.pipeline.common import node_exe
+    from tools import cpu_queue, mirror
+    from tools.pipeline.common import ROOT, log, node_exe
     jobs = layout_jobs(tl, shots)
     out.mkdir(parents=True, exist_ok=True)
     (out / 'layout.json').unlink(missing_ok=True)  # do not pass an old journal off as new if the run failed
     (out / 'layout_jobs.json').write_text(json.dumps({'timeline': str((wd / 'timeline.json').resolve()), 'jobs': jobs, 'out': str((out / 'layout.json').resolve()),
                                                       'png_dir': str((out / 'png').resolve()), 'png_scale': PNG_SCALE, 'workers': workers}), encoding='utf-8')
     m = mirror.sync()
-    with open(out / 'layout.log', 'w', encoding='utf-8') as lf:
+    # the CPU queue of the machine (tools/cpu_queue.py); inside precheck the whole step already holds its place
+    with cpu_queue.slot('precheck', f'{ROOT.name} {wd.name} frame journal', log), open(out / 'layout.log', 'w', encoding='utf-8') as lf:
         r = subprocess.run([node_exe(), str(Path(m) / 'tools' / 'stage_layout.mjs'), str((out / 'layout_jobs.json').resolve())], cwd=m, stdout=lf, stderr=subprocess.STDOUT)
     if r.returncode == ENV_EXIT and env is not None:
         why = [ln for ln in (out / 'layout.log').read_text(encoding='utf-8', errors='replace').splitlines() if ln.startswith('ENVIRONMENT:')]
@@ -1453,12 +1454,12 @@ def run(tl: dict, wd: Path, ch_cfg: dict, video: Path | None, out: Path | None =
 
 if __name__ == '__main__':
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from tools.pipeline.common import Channel, chapter_video, channel_of_work, load_json  # noqa: E402
+    from tools.pipeline.common import Channel, chapter_video, channel_of_work, episode_of_work, load_json  # noqa: E402
     a = sys.argv[1:]
     opt = lambda k, dflt=None: a[a.index(k) + 1] if k in a else dflt
     wd = Path(a[0]).resolve()
     tl = load_json(wd / 'timeline.json')
-    chn = Channel(channel_of_work(wd, tl))
+    chn = Channel(channel_of_work(wd, tl), episode_of_work(wd, tl))
     shots = opt('--shots').split(',') if opt('--shots') else None
     video = Path(opt('--video')) if opt('--video') else chapter_video(wd)
     if '--no-video' in a or not video.exists():

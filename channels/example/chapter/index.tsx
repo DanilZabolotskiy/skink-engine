@@ -1,15 +1,17 @@
 // Channel module of the example channel: what the engine needs to draw a chapter of this channel (lib/chapter/channel.ts).
 // remotion/channels.ts imports it; the pipeline config of the channel is in ../pipeline/*.json.
+// Kits — every file kits/*.tsx with an export KIT, found by folder (lib/chapter/registry.ts): a new kit is a new file, this module does
+// not change (docs/PARALLEL.md).
 import type {ChannelModule} from '../../../lib/chapter/channel';
+import {RequireContext, kitsOf} from '../../../lib/chapter/registry';
 import {personFor} from './cast';
-import {CafeKit} from './kits/cafe';
-import {CounterKit, counterCards} from './kits/counter';
 import {LineupCompositions} from './Lineup';
+
+declare const require: {context: RequireContext};
 
 const channel: ChannelModule = {
   id: 'example',
-  kits: {cafe: CafeKit, counter: CounterKit},
-  kitCards: {counter: counterCards},
+  kit: kitsOf(require.context('./kits', false, /\.tsx$/)),
   personFor,
   // a light HUD with a teal accent and round counter cells
   hud: {

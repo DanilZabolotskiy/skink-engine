@@ -9,10 +9,12 @@ channels/<id>/
   pipeline/sfx.json         sound library (ready files and planned ones)
   pipeline/music.json       music tracks and moods
   pipeline/colors.json      optional: colour references per preset for the colour check
-  accepted.txt              optional: accepted chapters for the guard step
+  pipeline/parts/*.json     what an episode adds to the config (places, guest roles, words, actions, aliases, sounds)
+  accepted/<episode>.txt    optional: accepted chapters for the guard step
   chapter/index.tsx         the channel module (default export)
-  chapter/cast.tsx          roles → people (outfit, look, height)
-  chapter/kits/*.tsx        location kits
+  chapter/cast.tsx          the regulars: roles → people (outfit, look, height)
+  chapter/roles/*.tsx       the roles of an episode (export ROLES), found by folder
+  chapter/kits/*.tsx        location kits (export KIT), found by folder
   assets/sound/, assets/music/   media files (not in git)
   seasons/s01/ep01/ch01/script.md, staging.json
   episodes/                 work folders (not in git)
@@ -25,14 +27,22 @@ channels/<id>/
 ```ts
 const channel: ChannelModule = {
   id: 'example',                           // = folder name; compositions example-chapter, example-chapter-stage, …
-  kits: {cafe: CafeKit, counter: CounterKit},  // channel.json → locations.<place>.kit
-  kitCards: {counter: counterCards},       // TEXT cards the kit draws itself
+  kit: kitsOf(require.context('./kits', false, /\.tsx$/)),  // kit id → {id, Kit, cards}: every kits/*.tsx with an export KIT
   personFor,                               // role → {outfit, look, h, hero?, style?} or null (a stand-in with a stub tag)
   grades: {day: mutedDayRgb},              // optional colour grades per preset (lib/chapter/grade.ts)
   hud: {brand: 'SKINK DEMO', counterLabel: 'PART', theme: {accent: '#2A9D8F', round: true}},
   Compositions: LineupCompositions,        // optional extra compositions (cast lineup…)
 };
 export default channel;
+```
+
+Kits and the roles of an episode are found by folder (`lib/chapter/registry.ts`): a chapter adds a file instead of editing a shared list, so two sessions working on different episodes do not edit the same file ([PARALLEL.md](PARALLEL.md)). `require.context` is webpack's: the call must be written literally in the channel's own file, with `declare const require: {context: RequireContext};` for TypeScript. The same kit id or role in two files is an error in the frame.
+
+```ts
+// kits/cafe.tsx — the last lines of a kit file
+export const KIT: KitDef = {id: 'cafe', Kit: CafeKit};                              // id = channel.json → locations.<place>.kit
+// kits/counter.tsx — a kit that draws a TEXT card itself
+export const KIT: KitDef = {id: 'counter', Kit: CounterKit, cards: counterCards};   // label → true: no HUD card for it
 ```
 
 Register it in `remotion/channels.ts`:
@@ -53,18 +63,18 @@ A kit is a React component `({shot, t, lt, f}: KitProps) => JSX` that draws one 
 - Place roles with `Figure` (`lib/chapter/figure.tsx`) at `pt(cam, [x, 0, z])` with `ppm = focal(cam) / depth`; walking figures take their position from `pathAt(member.path, u, dur)`; gaze with `gazeBy(...)` and named target points.
 - Every other motion comes from events: `beat`, `propAt`, `eventOf` (`lib/staging/stage.ts`). No shot fractions or seconds in kit code.
 - Mark props for the frame journal with `propMark(id, state)`, texts the shot must show with `read`, hands the kit draws itself with `handMark(...)`.
-- Text drawn by the kit goes into `kitCards` so the chapter does not repeat it as a card.
+- Text drawn by the kit goes into `KIT.cards` so the chapter does not repeat it as a card.
 
 ## A role
 
-`chapter/cast.tsx` maps a role to a `Person`:
+`chapter/cast.tsx` maps the regulars of the channel to a `Person`; the roles of an episode go to `chapter/roles/<episode>.tsx` (`export const ROLES: Record<string, Person>`), which `cast.tsx` adds with `rolesOf(require.context('./roles', false, /\.tsx$/))`. A person:
 
 - `outfit` — colours: skin, hair, top, shirt, trousers, shoes, lanyard, folder, line (`Outfit` of `lib/character/Character.tsx`; missing ones come from `OUTFIT_DEFAULT`);
 - `look` — `lib/character/looks.ts`: `build` (man, woman or child: proportions and face type; default — man), hair, top, bottom, a cap, glasses, age, width, head size, items in the hands, a lanyard with a badge (only when `lanyard` is set), individual face features (`features`);
 - `h` — height in metres; `hero` — keeps its own colours under a colour grade;
 - `style` — a drawing style (a folder of `lib/styles`) other than the chapter's (`channel.json → style`).
 
-In `channel.json`: `cast` (roles with a figure), `names` (regexes that find the role in script lines), `lead`, `cast_pron`, `extras` (roles without a figure, drawn as stand-ins); in `voices.json`: a speaker.
+In `channel.json` (for a role of an episode — in `pipeline/parts/<episode>.json` → `channel`): `cast` (roles with a figure), `names` (regexes that find the role in script lines), `lead`, `cast_pron`, `extras` (roles without a figure, drawn as stand-ins); in `voices.json`: a speaker (a role of an episode may take an existing voice by `voices.aliases` of its part file).
 
 ## Drawing styles
 

@@ -1,0 +1,13 @@
+{
+ "_doc": "Episode s01e01 of the example channel: what its chapters add to the channel config — the guest role OSCAR, the counter insert and its stamp.lift action. Merged into channel.json (and voices.json, sfx.json, music.json under those keys) on load: tools/pipeline/common.py → Channel, docs/PARALLEL.md. cast_words and action_verbs of this file apply only to the chapters of s01e01; a key already set otherwise is an error.",
+ "episode": "s01e01",
+ "channel": {
+  "locations": {
+   "counter": {"kit": "counter", "about": "the café counter from above", "ambience": "amb_cafe"}
+  },
+  "names": {"OSCAR": ["\\boscar\\b"]},
+  "cast": {"OSCAR": {"stub": false, "note": "a regular: grey hair, square glasses, a teal padded jacket"}},
+  "actions": {"stamp.lift": {"prop": "lift", "to": 1, "from": 0, "dur": 0.6, "sfx": []}},
+  "_doc_actions": "actions — channel actions on top of lib/staging/actions.json (same format): stamp.lift — the stamp goes back up (kit counter)."
+ }
+}

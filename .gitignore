@@ -8,8 +8,8 @@
 .DS_Store
 Thumbs.db
 
-# Node
-node_modules/
+# Node (in an episode worktree node_modules is a link to the main checkout, docs/PARALLEL.md)
+node_modules
 out/
 .remotion/
 .bundle-*/
@@ -20,13 +20,20 @@ __pycache__/
 .venv/
 venv/
 
-# Editors and agent tooling
+# Editors and agent tooling (the shared Claude Code skills and agents of the chapter flow are in git, local settings are not)
 .vscode/
 .idea/
-.claude/
+.claude/*
+!.claude/skills/
+!.claude/agents/
 
-# Chapter work folders (renders, voice, checks)
-channels/*/episodes/
+# Chapter work folders (renders, voice, checks) and media libraries; in an episode worktree they are links to the main checkout
+channels/*/episodes
+channels/*/assets/sound
+channels/*/assets/music
+
+# The API reference — every checkout writes its own (tools/api_ref.py, docs/PARALLEL.md)
+docs/API.md
 
 # Images, sound, video
 *.png

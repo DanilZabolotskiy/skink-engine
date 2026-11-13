@@ -4,12 +4,14 @@ The code is copied to the temp folder (tools/mirror.py) and rendered from there 
 A scene is a separate mp4 (render/sNN.mp4); a cache by the hash of the code, the chapter header (channel, drawing style, fps, frame size)
 and the scene data: only changed scenes are re-rendered.
 Scenes are joined by ffmpeg concat without re-encoding → render/video.mp4 (no sound).
+The render goes through the CPU queue of the machine (tools/cpu_queue.py, a render place): a render of another session — wait, the wait is
+written to the run log.
 """
 import subprocess
 from pathlib import Path
 
 from tools.pipeline.common import ROOT, PipelineError, channel_of, ffmpeg, log, node_exe, save_json, sha
-from tools import mirror
+from tools import cpu_queue, mirror
 
 
 def code_hash() -> str:
@@ -43,7 +45,7 @@ def run(tl: dict, tl_path: Path, wd: Path, composition=None, concurrency=4, forc
                 'jobs': [{k: j[k] for k in ('name', 'from', 'to', 'out')} for j in jobs]}
         save_json(rd / 'jobs.json', spec)
         log(f'render: scenes {len(jobs)} of {len(groups)}, frames {sum(j["to"] - j["from"] + 1 for j in jobs)}, from {m}')
-        with open(rd / 'render.log', 'w', encoding='utf-8') as lf:
+        with cpu_queue.slot('render', f'{ROOT.name} {wd.name}', log), open(rd / 'render.log', 'w', encoding='utf-8') as lf:
             r = subprocess.run([node_exe(), str(Path(m) / 'tools' / 'render.mjs'), str(rd / 'jobs.json')], cwd=m, stdout=lf,
                                stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
         tail = (rd / 'render.log').read_text(encoding='utf-8', errors='replace').strip().splitlines()[-6:]

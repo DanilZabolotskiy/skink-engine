@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from tools.pipeline.common import Channel, PipelineError, channel_dir, has_hangul, save_json  # noqa: E402
+from tools.pipeline.common import Channel, PipelineError, channel_dir, episode_of, has_hangul, save_json  # noqa: E402
 
 RE_SCENE = re.compile(r'^##\s*SCENE\s+(\d+)\s*(?:[—–-]+\s*([^|]*?))?\s*(?:\|(.*))?$', re.I)
 RE_SHOT = re.compile(r'^###\s*SHOT\s+(\d+)\.(\d+)\s*(?:\|\s*([\d.,]+)\s*s(?:ec)?\b)?\s*(?:\|(.*))?$', re.I)
@@ -145,7 +145,8 @@ def parse(script: Path, ch: Channel, lang: str):
             loc, pre = scene['location'], scene['preset']
             if loc not in ch.cfg['locations']:
                 errors.append(f'line {n}: SCENE {scene["id"]}: unknown location "{loc}". Known: {", ".join(ch.cfg["locations"])}. '
-                              f'A new one — add it to {ch.id}/pipeline/channel.json → locations (kit: null — a stub)')
+                              f'A new one — in the episode file {ch.id}/pipeline/parts/<episode>.json → channel.locations (kit: null — a stub; '
+                              'docs/PARALLEL.md) or in pipeline/channel.json')
             if pre not in ch.cfg['presets']:
                 errors.append(f'line {n}: SCENE {scene["id"]}: unknown preset "{pre}". Available: {", ".join(ch.cfg["presets"])} '
                               f'and aliases {", ".join(ch.cfg.get("preset_aliases", {}))}')
@@ -225,7 +226,8 @@ def parse(script: Path, ch: Channel, lang: str):
                 r = ch.speaker(v['speaker'])
                 if not r:
                     errors.append(f'line {v["line"]}: SHOT {sh["id"]}: unknown speaker "{v["speaker"]}". Available: '
-                                  f'{", ".join(ch.voices["speakers"])} (and aliases). A new one — add it to {ch.id}/pipeline/voices.json')
+                                  f'{", ".join(ch.voices["speakers"])} (and aliases). A role of an episode — an alias in {ch.id}/pipeline/parts/<episode>.json → voices.aliases; a new '
+                                  f'voice — {ch.id}/pipeline/voices.json')
                 else:
                     v['voice'] = r[0]
                     if r[2]:  # voice copy: the original voice + processing by NOTE and tags
@@ -285,7 +287,7 @@ if __name__ == '__main__':
     ap.add_argument('--out')
     a = ap.parse_args()
     try:
-        chn = Channel(channel_dir(Path(a.script) / 'script.md' if Path(a.script).is_dir() else Path(a.script)))
+        chn = Channel(channel_dir(Path(a.script) / 'script.md' if Path(a.script).is_dir() else Path(a.script)), episode_of(a.script))
         a.lang = a.lang or chn.lang
         sp = pick_script(Path(a.script), a.lang)
         d = parse(sp, chn, a.lang)

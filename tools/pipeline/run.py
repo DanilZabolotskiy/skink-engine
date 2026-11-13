@@ -10,12 +10,16 @@ precheck — staging checks before render on frames drawn from code (tools/pipel
 the pipeline stops before render; --no-precheck — without it. With --scenes and without the render step (the edit loop: --steps
 parse,timeline,precheck) the timeline is built for the whole chapter (frames and times as in the full chapter), precheck runs only on
 the shots of these scenes.
-guard — accepted chapters of the channel against their videos (tools/guard.py --accepted, docs/PIPELINE.md "Accepted chapters guard"):
-edits of shared code for this chapter did not change the accepted ones; --no-guard — without it.
+guard — accepted chapters against their videos (tools/guard.py, docs/PIPELINE.md "Accepted chapters guard") — only those whose frames the
+uncommitted edit touches (tools/lane.py: shared code — all of them, a kit — the chapters with that kit; new files of a chapter — none): the
+edits made for this chapter did not change the accepted ones; --no-guard — without it. The work folder of an accepted chapter is the guard
+reference: the pipeline does not write into it (SKINK_UNFREEZE=1 — the owner's decision).
 --go — allow paid TTS of new lines (without it the estimate is printed and the pipeline stops);
 --estimate — no TTS: durations from the text length, silent speech (checks the picture and the timing).
 """
 import argparse
+import os
+import shutil
 import subprocess
 import sys
 import time
@@ -23,14 +27,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.pipeline import audio, check, parse, precheck, render, timeline, voice  # noqa: E402
-from tools.pipeline.common import (ROOT, Channel, PipelineError, channel_dir, chapter_video, ffmpeg, load_json, log, rel, save_json, style_ids,  # noqa: E402
-                                   work_dir)
+from tools.pipeline.common import (ROOT, Channel, PipelineError, accepted_dirs, channel_dir, chapter_video, episode_of, ffmpeg, load_json, log, rel,  # noqa: E402
+                                   save_json, style_ids, work_dir)
 
 STEPS = ['parse', 'voice', 'timeline', 'precheck', 'render', 'audio', 'assemble', 'check', 'guard']
 
 
 def chapter(a):
-    ch = Channel(channel_dir(Path(a.script) / 'script.md' if Path(a.script).is_dir() else Path(a.script)))
+    ch = Channel(channel_dir(Path(a.script) / 'script.md' if Path(a.script).is_dir() else Path(a.script)), episode_of(a.script))
     a.lang = a.lang or ch.lang
     if a.style:
         ch.cfg['style'] = a.style  # draw the figures in another drawing style for this run
@@ -39,6 +43,10 @@ def chapter(a):
         raise PipelineError(f'unknown drawing style {ch.cfg.get("style")!r} (channel.json → style or --style); styles: {", ".join(styles)}')
     script = parse.pick_script(Path(a.script), a.lang)
     wd = (Path(a.work) if a.work else work_dir(script, a.lang, ch)).resolve()
+    if wd in {p.resolve() for p in accepted_dirs(ch.dir)} and not os.environ.get('SKINK_UNFREEZE'):
+        raise PipelineError(f'{rel(wd)} is the work folder of an accepted chapter: its timeline.json and video are the guard reference, the pipeline '
+                            'does not write into it. An edit of an accepted chapter — only by the owner\'s decision (SKINK_UNFREEZE=1); a trial — '
+                            '--work <another folder> (docs/PARALLEL.md)')
     wd.mkdir(parents=True, exist_ok=True)
     steps = STEPS if a.steps == 'all' else [s.strip() for s in a.steps.split(',')]
     bad = [s for s in steps if s not in STEPS]
@@ -105,17 +113,42 @@ def chapter(a):
         check.run(tl, wd, ch, out_mp4, run_stt=not a.no_stt)
     # a trial run (--until, --scenes, --estimate) does not check accepted chapters unless the step is named explicitly
     probe = a.steps == 'all' and (a.until is not None or a.scenes or a.estimate)
-    if 'guard' in steps and not a.no_guard and not probe and (ch.dir / 'accepted.txt').exists():
-        # accepted chapters of the channel against their videos: control frames drawn by the current code (tools/guard.py); the report and
-        # the pair sheets go to this chapter's folder (check/guard/<accepted chapter>), the folders of the accepted chapters do not change
-        r = subprocess.run([sys.executable, str(ROOT / 'tools' / 'guard.py'), '--accepted', ch.dir.name, '--out', str(wd / 'check' / 'guard')],
-                           capture_output=True, text=True, encoding='utf-8', errors='replace')
-        err = [ln for ln in r.stderr.strip().splitlines() if not ln.startswith('mirror:')][-3:] if r.returncode else []
-        for line in r.stdout.strip().splitlines() + err:
-            log(f'  {line}')
-        log('accepted chapters guard: ' + ('no differences' if r.returncode == 0 else 'NOT RUN — see the error above' if err else
-                                         f'DIFFERENCES FOUND — pair sheets in {rel(wd / "check" / "guard")}/<chapter>/pairs (docs/PIPELINE.md, "Accepted chapters guard")'))
+    if 'guard' in steps and not a.no_guard and not probe and accepted_dirs(ch.dir):
+        guard_step(ch, wd)
     log(f'done in {time.time() - t0:.0f} s')
+
+
+def guard_step(ch: Channel, wd: Path):
+    """Accepted chapters against their videos: control frames drawn by the current code (tools/guard.py) — only the chapters whose frames
+    the uncommitted edit touches (tools/lane.py; what is committed in the engine lane was checked before its commit). The report and the pair
+    sheets go to this chapter's folder (check/guard/<accepted chapter>): the folders of the accepted chapters do not change."""
+    dirs = [str(p) for p in accepted_dirs(ch.dir)]
+    try:
+        from tools import lane
+        res = lane.analyse(argparse.Namespace(staged=False, since=None, base=None))
+        hit = {c for r in res['rows'] for c in r['frames']}
+        dirs = [str(c['wd']) for c in res['usage'].chapters if c['label'] in hit]
+        log(f'accepted chapters guard: the uncommitted edit touches the frames of {len(dirs)} of {len(res["usage"].chapters)} (tools/lane.py)')
+    except (Exception, SystemExit) as e:  # no git — check them all
+        log(f'accepted chapters guard: tools/lane.py failed ({str(e)[:120]}) — checking all of them')
+    gd = wd / 'check' / 'guard'
+    if gd.exists():
+        shutil.rmtree(gd)  # old guard reports of this chapter are not passed off as new ones (the folder of the chapter being built)
+    gd.mkdir(parents=True)
+    (gd / 'report.md').write_text('# Accepted chapters guard (the guard step)\n\n' + (
+        f'- Checked (the uncommitted edit touches their frames, tools/lane.py): {len(dirs)} — {", ".join(Path(d).name for d in dirs)}; reports — '
+        '<chapter>/report.md\n' if dirs else '- Not needed: the uncommitted edit does not touch the frames of accepted chapters (tools/lane.py check)\n'),
+        encoding='utf-8')
+    if not dirs:
+        log('accepted chapters guard: not needed')
+        return
+    r = subprocess.run([sys.executable, str(ROOT / 'tools' / 'guard.py'), *dirs, '--out', str(gd)], capture_output=True, text=True, encoding='utf-8',
+                       errors='replace')
+    err = [ln for ln in r.stderr.strip().splitlines() if not ln.startswith('mirror:')][-3:] if r.returncode else []
+    for line in r.stdout.strip().splitlines() + err:
+        log(f'  {line}')
+    log('accepted chapters guard: ' + ('no differences' if r.returncode == 0 else 'NOT RUN — see the error above' if err else
+                                     f'DIFFERENCES FOUND — pair sheets in {rel(gd)}/<chapter>/pairs (docs/PIPELINE.md, "Accepted chapters guard")'))
 
 
 def episode(a):

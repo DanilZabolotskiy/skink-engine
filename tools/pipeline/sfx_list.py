@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from tools.pipeline import parse, timeline  # noqa: E402
-from tools.pipeline.common import Channel, PipelineError, channel_dir, load_json, rel, work_dir  # noqa: E402
+from tools.pipeline.common import Channel, PipelineError, channel_dir, episode_of, load_json, rel, work_dir  # noqa: E402
 
 
 def music_rows(sc: dict, ch: Channel):
@@ -38,7 +38,7 @@ def music_rows(sc: dict, ch: Channel):
 
 
 def run(script: Path, lang: str, wd: Path | None):
-    ch = Channel(channel_dir(script))
+    ch = Channel(channel_dir(script), episode_of(script))
     sc = parse.parse(script, ch, lang)
     lib = ch.sfx
     rate = lib.get('credits_per_second', 40)

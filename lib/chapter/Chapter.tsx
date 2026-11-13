@@ -94,11 +94,12 @@ export const Chapter: React.FC<{timeline: Timeline; clean?: boolean; subs?: bool
   // the drawing style of the figures: timeline.json → style (channel.json → style or run.py --style); an unknown id is an error
   const style = styleById(timeline.style ?? '');
   const lt = t - shot.start;
-  const Kit = shot.kit ? ch.kits[shot.kit] : null;
+  const def = shot.kit ? ch.kit(shot.kit) : undefined;
+  const Kit = def?.Kit;
   const Stub = ch.stub ?? StubKit;
   const dur = shot.end - shot.start;
   // on-screen text that the kit draws itself (a document on the desk, a framed notice) is not repeated as a card
-  const own = shot.kit ? ch.kitCards?.[shot.kit] : undefined;
+  const own = def?.cards;
   const cards = own ? shot.cards.filter((c) => !own(c.label, shot)) : shot.cards;
   const dip = Math.max(shot.dipIn ? 1 - clamp(lt / shot.dipIn) : 0, shot.dipOut ? 1 - clamp((dur - lt) / shot.dipOut) : 0);
   const kit0 = Kit ? <Kit shot={shot} t={t} lt={lt} f={f} /> : <Stub shot={shot} t={t} lt={lt} f={f} about={shot.about} />;
@@ -111,7 +112,7 @@ export const Chapter: React.FC<{timeline: Timeline; clean?: boolean; subs?: bool
   return (
     <AbsoluteFill data-stage="root" style={{background: '#000', overflow: 'hidden'}}>
       {ch.grades?.[shot.preset] ? <GradeLayer key={f} preset={shot.preset}>{kitNode}</GradeLayer> : kitNode}
-      {shot.kit && !ch.kits[shot.kit] && <div style={{position: 'absolute', left: 40, top: 120, background: '#FFE14D', padding: 10, fontSize: 30}}>no kit "{shot.kit}"</div>}
+      {shot.kit && !def && <div style={{position: 'absolute', left: 40, top: 120, background: '#FFE14D', padding: 10, fontSize: 30}}>no kit "{shot.kit}"</div>}
       {!clean && cards.length > 0 && <Cards cards={cards} lt={lt} dur={dur} bottom={shot.cardsAt === 'bottom'} theme={theme} />}
       {!clean && shot.bar && (
         <TitleBar theme={theme} t={t} title={shot.bar} counter={shot.counter} counterLabel={ch.hud?.counterLabel} stamp={shot.stamp ?? undefined}

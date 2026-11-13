@@ -12,7 +12,7 @@ import type {Hold} from '../../../lib/character/looks';
 import type {CharacterStyle} from '../../../lib/character/style';
 import {FONT_KR, useFonts} from '../../../lib/hud/hud';
 import {STYLES} from '../../../lib/styles';
-import {CAST} from './cast';
+import {personFor} from './cast';
 
 const {webtoon, western} = STYLES;
 
@@ -60,7 +60,7 @@ const Lineup: React.FC = () => {
       {floor}
       {cells.map((c, i) => {
         const x = step * (i + 0.5);
-        const p = CAST[c.who];
+        const p = personFor(c.who)!;
         const look = c.hold && p.look ? {...p.look, hold: c.hold} : p.look;
         return (
           <React.Fragment key={i}>

@@ -1,5 +1,5 @@
 {
- "_doc": "Pipeline config of the example channel (docs/PIPELINE.md, docs/CHANNEL.md). locations — every place a script may name: kit — a kit drawn by code (chapter/index.tsx → kits), null — a stub with a mark. A new location in a script — first a line here.",
+ "_doc": "Pipeline config of the example channel (docs/PIPELINE.md, docs/CHANNEL.md). locations — every place a script may name: kit — a kit drawn by code (a file chapter/kits/<kit>.tsx with an export KIT), null — a stub with a mark. What an episode adds (its places, guest roles, actions) goes to its own file pipeline/parts/<episode>.json, merged into this config on load (docs/PARALLEL.md).",
  "language": "en",
  "fps": 30,
  "width": 1920,
@@ -18,19 +18,16 @@
     {"cam": "close on oscar", "view": "close-oscar"}
    ]
   },
-  "counter": {"kit": "counter", "about": "the café counter from above", "ambience": "amb_cafe"},
   "street": {"kit": null, "about": "the street outside the café (no kit yet — drawn as a stub)"}
  },
- "names": {"MIRA": ["\\bmira\\b"], "OSCAR": ["\\boscar\\b"]},
- "lead": "OSCAR",
- "cast": {"MIRA": {"stub": false, "note": "the barista: a ponytail, a rust T-shirt"}, "OSCAR": {"stub": false, "note": "a regular: grey hair, square glasses, a teal padded jacket"}},
+ "names": {"MIRA": ["\\bmira\\b"]},
+ "lead": "MIRA",
+ "cast": {"MIRA": {"stub": false, "note": "the barista: a ponytail, a rust T-shirt"}},
  "cast_words": [],
  "cast_pron": {"she": ["MIRA"]},
  "extras": {"prefix": "EXTRA_", "words": ["customer", "waiter", "passer-by"]},
  "_doc_extras": "extras — roles without a figure: an id with the prefix in ON SCREEN (EXTRA_CUSTOMER) or the first of the words found in a line ('a customer'); they are drawn as stand-ins with a stub tag.",
  "hud": {"episode_plate": "Episode {ep}"},
- "actions": {"stamp.lift": {"prop": "lift", "to": 1, "from": 0, "dur": 0.6, "sfx": []}},
- "_doc_actions": "actions — channel actions on top of lib/staging/actions.json (same format): stamp.lift — the stamp goes back up (kit counter).",
  "timing": {"lead_in": 0.35, "gap": 0.35, "tail": 0.5, "min_shot": 1.5, "scene_dip": 0.3, "est_syllables_per_sec": 14},
  "_doc_timing": "est_syllables_per_sec — speech rate for --estimate (no TTS): letters and digits per second (about 14 for English letters, 4.6 for Korean syllables).",
  "subtitles": {"max_chars": 42, "min_dur": 0.9, "highlight": [["(?i)\\b(ten|10)\\b", "{\\1}"]]},

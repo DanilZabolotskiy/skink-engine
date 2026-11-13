@@ -1,9 +1,9 @@
-// Kit "counter": the café counter from above (flat 2D, no perspective). The loyalty card is drawn by the kit itself (kitCards →
+// Kit "counter": the café counter from above (flat 2D, no perspective). The loyalty card is drawn by the kit itself (KIT.cards →
 // counterCards), so the TEXT of the shot is on the card, not on a card of the HUD. Movement comes only from events of the staging layer:
 //   paper.slide — the card slides in from the right edge onto the counter (sound "paper" at 10 % of the progress, lib/staging/actions.json)
 //   stamp.press — the stamp comes down from the top edge onto the tenth circle and lands at the end of the event (sound "stamp" on
 //                 landing); the tenth circle is stamped from that moment
-//   stamp.lift  — the stamp goes back up out of the frame (a channel action: pipeline/channel.json → actions)
+//   stamp.lift  — the stamp goes back up out of the frame (a channel action: pipeline/parts/s01e01.json → channel.actions)
 // The camera moves only when the camera line asks for it (push-in over the whole shot).
 import React from 'react';
 import {AbsoluteFill, useVideoConfig} from 'remotion';
@@ -12,6 +12,7 @@ import {KitProps, Shot} from '../../../../lib/chapter/types';
 import {beat, eventOf, propAt} from '../../../../lib/staging/stage';
 import {propMark} from '../../../../lib/staging/journal';
 import {smooth} from '../../../../lib/anim';
+import type {KitDef} from '../../../../lib/chapter/registry';
 import {palOf} from '../palette';
 
 const CARD_W = 1000;
@@ -105,3 +106,6 @@ export const CounterKit: React.FC<KitProps> = ({shot, lt}) => {
     </AbsoluteFill>
   );
 };
+
+/** The kit in the channel's kit registry (lib/chapter/registry.ts; parts/s01e01.json → locations.counter.kit); the loyalty card is its own text. */
+export const KIT: KitDef = {id: 'counter', Kit: CounterKit, cards: counterCards};
