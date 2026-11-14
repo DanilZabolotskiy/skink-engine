@@ -110,12 +110,13 @@ export const Chapter: React.FC<{timeline: Timeline; clean?: boolean; subs?: bool
       <StageCtx.Provider value={{stage: shot.stage, lt, fps}}>{kit0}</StageCtx.Provider>
     </StyleCtx.Provider>
   );
-  // a cell is crossed out at the moment of the breach, not from the first frame of the shot: the event "hud.cross" (prop hud.crossed
-  // 0 → 1) — before it the current cell of the shot is lit, after it crossed out; no such state — as the script TEXT says. Cells crossed
-  // in earlier shots ("2 crossed, 3 lit") stay crossed
+  // a cell is crossed out at the moment of the event, not from the first frame of the shot: the event "hud.cross" (prop hud.crossed
+  // 0 → 1) — before it the current cell of the shot is lit, after it crossed out; no such state — as the script TEXT says. Other cells
+  // crossed by TEXT ("2 crossed, 3 lit") stay crossed
   const hc = propAt(shot.stage, 'hud', 'crossed', lt);
   const c0 = shot.counter;
-  const counter = c0 && hc !== null && hc <= 0.5 ? {...c0, crossed: c0.crossed.filter((n) => n !== c0.current)} : c0;
+  const others = c0 ? c0.crossed.filter((n) => n !== c0.current) : [];
+  const counter = c0 && hc !== null ? {...c0, crossed: hc > 0.5 && c0.current > 0 ? [...others, c0.current] : others} : c0;
   return (
     <AbsoluteFill data-stage="root" style={{background: '#000', overflow: 'hidden'}}>
       {ch.grades?.[shot.preset] ? <GradeLayer key={f} preset={shot.preset}>{kitNode}</GradeLayer> : kitNode}

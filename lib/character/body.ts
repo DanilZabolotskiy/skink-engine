@@ -532,10 +532,8 @@ export function bodyPose(p: BodyIn): Body {
             }
           }
         }
-        // a fingertip (grip point): the hand view is the natural turn (liveView) of the arm already brought to the point, then the tip is
-        // fitted to that view, and the same view is drawn (fixed) — otherwise the natural turn wavers between the back of the hand and the
-        // edge, and the tip leaves the point by the width of the hand (the journal: "hand not touching" by 25–33 units; "palm twisted" by
-        // 138° with a view chosen in advance)
+        // a fingertip (grip point): the hand view is the natural turn (liveView) of the arm brought to the point, the tip is fitted to that
+        // view, and the same view is drawn at the point (fixed), so the tip stays on the point
         if (gPoint && aim) {
           for (let pass = 0; pass < 3; pass++) {
             const v1 = solve(Tg, poleG, view, shape, {q, dir}).h.view; // the palm by the neutral of the arm (not the palm to the target)
@@ -666,8 +664,8 @@ export function bodyPose(p: BodyIn): Body {
       const midView: HandView = plane && gw > 0.12 ? (planeOut ? 'palmar' : 'dorsal') : restView;
       // the hand view — the one of the pose while its palm is not twisted (a pose with a point has its own palm normal: towards the target,
       // down onto the rail); otherwise the nearest natural one (solve → liveView). The hand direction goes from the forearm line to the
-      // direction of the pose over the motion (dirK). A fingertip (grip point) at the point (gw > 0.98, as the grip goes to the journal)
-      // keeps the view fitted to the point above; on the way — the natural turn (fixed on the way twisted the palm by 131°)
+      // direction of the pose over the motion (dirK). A fingertip (grip point) keeps the view fitted to the point only at the point
+      // (gw > 0.98); on the way — the natural turn
       const hopt: SolveOpt = {q, dir, dirK: dirK * dirK * (3 - 2 * dirK), bend: (back ? -0.1 : 0.1) * (1 - dirK), keep: run, from: mix, palm: on ? palmG : undefined, wk: clamp((gw - 0.6) / 0.4),
         fixed: gw > 0.98 && shape === 'point' ? true : undefined};
       const r = EWm ? place(EWm.E, EWm.W, Pm, on ? view : midView, drawShape, hopt) : solve(Tm, Pm, on ? view : midView, drawShape, hopt);

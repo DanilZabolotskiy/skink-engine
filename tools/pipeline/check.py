@@ -56,18 +56,27 @@ def norm(s: str, lang: str = 'ko', ref: str = '') -> str:
     """Text for comparison with the recognised one: letters only; for Korean digits become words (recognition writes "13번" as "십삼번").
     Every number is read in the counting the line text ref uses: Sino-Korean (십삼), native before a counter word (recognition writes
     "서른세 개" as "33개", "아홉 시" as "9시") or native on its own (서른셋); without ref or without a match — Sino-Korean (a line with
-    "33개" was heard right but scored 0.79 against "삼십삼")."""
+    "33개" was heard right but scored 0.79 against "삼십삼"). A reading is matched together with the text next to the digits — the
+    counter word after them, else the word before them: a one-syllable reading (일, 이, 사, 두…) alone is found in ordinary words and
+    particles of almost any line; with no context match — the longest reading found in ref."""
     if lang != 'ko':  # other languages: letters and digits only, case-insensitive
         return re.sub(r'[\W_]', '', (s or '').lower())
+    src = s or ''
 
     def word(m):
         n = int(m.group(0))
-        for w in (sino(n), native(n), native(n, True)):
-            if w and w in ref:
-                return w
+        cands = [w for w in (sino(n), native(n), native(n, True)) if w]
+        if ref:
+            pre = re.sub(r'[^가-힣a-zA-Z]', '', src[:m.start()])[-2:]
+            suf = re.sub(r'[^가-힣a-zA-Z]', '', src[m.end():])[:2]
+            forms = ([lambda w, k=k: w + suf[:k] for k in (2, 1) if len(suf) >= k]
+                     + [lambda w, k=k: pre[-k:] + w for k in (2, 1) if len(pre) >= k] + [lambda w: w])
+            for form in forms:
+                hit = [w for w in cands if form(w) in ref]
+                if hit:
+                    return max(hit, key=len)
         return sino(n)
-    s = re.sub(r'\d{1,4}', word, s or '')
-    return re.sub(r'[^가-힣0-9a-zA-Z]', '', s)
+    return re.sub(r'[^가-힣0-9a-zA-Z]', '', re.sub(r'\d{1,4}', word, src))
 
 
 def sheets(tl: dict, mp4: Path, cd: Path):
