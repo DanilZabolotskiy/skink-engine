@@ -75,14 +75,14 @@ export function palmNormal(view: HandView, u: Pt): V3 {
 /** Wrist limits in the frame, degrees from the forearm line: toU — towards side u (dorsal, palmar views — towards the thumb; side
  *  views — towards the palm), away — the other way (towards the little finger / the back of the hand). The same numbers are in
  *  tools/hands_check.mjs (LIM). */
-export const WRIST_LIM: Record<HandView, {toU: number; away: number}> = {
+const WRIST_LIM: Record<HandView, {toU: number; away: number}> = {
   dorsal: {toU: 25, away: 40},
   palmar: {toU: 25, away: 40},
   radial: {toU: 75, away: 60},
   ulnar: {toU: 75, away: 60},
 };
 /** The wrist bend limit during the motion of a gesture, degrees (one for all views). */
-export const WRIST_MOVE = 24;
+const WRIST_MOVE = 24;
 /** The hand continues the forearm: the finger direction f is brought into a natural wrist bend. fa — the forearm in the frame, r — the
  *  visible share of its length (a foreshortened forearm line in the frame is short and imprecise — the tolerance is wider, as in the
  *  check); wk < 1 — the arm in motion. Returns f, the bend and how much was cut off, degrees. */
@@ -104,7 +104,7 @@ export function wristClamp(fa: Pt, f: Pt, hand: HandSide, view: HandView, r: num
 
 /** Forearm rotation: the angle between the palm of view and its neutral for a bent arm (the palm in the arm plane, the thumb up),
  *  degrees; an almost straight arm or a forearm pointing at the viewer — 0 (the rotation is undefined / not visible). */
-export function twistOf(hand: HandSide, view: HandView, S: V3, E: V3, W: V3, f: Pt, palm?: V3): number {
+function twistOf(hand: HandSide, view: HandView, S: V3, E: V3, W: V3, f: Pt, palm?: V3): number {
   const up = v3.norm(v3.sub(E, S));
   const fo = v3.norm(v3.sub(W, E));
   if (v3.dot(up, fo) > Math.cos((25 * Math.PI) / 180)) return 0; // the elbow bent less than 25° (an inner angle > 155°)
@@ -116,7 +116,7 @@ export function twistOf(hand: HandSide, view: HandView, S: V3, E: V3, W: V3, f: 
   return (Math.acos(Math.max(-1, Math.min(1, v3.dot(pj(n), pj(n0))))) * 180) / Math.PI;
 }
 /** A natural limit of the palm turn from neutral, degrees. */
-export const TWIST_LIM = 100;
+const TWIST_LIM = 100;
 const VIEW_RING: HandView[] = ['dorsal', 'radial', 'palmar', 'ulnar'];
 /** The hand view within a natural forearm rotation: the wanted view if its palm is not twisted; otherwise the nearest natural one (a
  *  neighbour by forearm rotation, then the opposite one). A hand that a pose asks to be twisted is drawn in the nearest natural turn. */

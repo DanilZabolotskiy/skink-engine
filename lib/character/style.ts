@@ -50,7 +50,7 @@ export type CharacterStyle = {
   body: (p: BodyIn) => BodyOut;
   /** Optional self-check of the drawn hands for the pose journal (tools/hands_check.mjs): gap — how far a finger base is outside the palm
    *  outline, notch — the deepest notch between neighbouring fingers (hand frame units); with grip (the centre and the axis of a prop in the
-   *  fist, hand frame) — wrap, how many fingers lie on the prop. A style without it skips the rules "finger", "fingers apart" and "grip". */
+   *  fist, hand frame) — wrap, how many fingers lie on the prop. A style without it skips the rules "finger", "fingers apart" and "wrap". */
   handAudit?: (h: Hand, grip?: {c: Pt; axis: Pt}) => {gap: number; notch: number; wrap?: number};
 };
 

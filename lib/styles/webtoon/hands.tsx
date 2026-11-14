@@ -548,18 +548,15 @@ const finBone = (f: Fin, n = 10): Bone => {
   }
   return {pts, ws};
 };
-/** What is drawn: the palm outline (null — none), the fingers in order and the thumb. The same choice of the drawing as in handParts.
- *  rig — the skeleton only (to compare a drawn shape with its skeleton). */
-function handSkel(shape: HandShape, view: HandView, q = 0, from?: HandMix, rig = false): {palm: P[] | null; fins: Bone[]; thumb: Bone | null} {
+/** What is drawn: the palm outline (null — none), the fingers in order and the thumb. The same choice of the drawing as in handParts. */
+function handSkel(shape: HandShape, view: HandView, q = 0, from?: HandMix): {palm: P[] | null; fins: Bone[]; thumb: Bone | null} {
   const side = view === 'radial' || view === 'ulnar';
-  if (!rig) {
-    if (side) {
-      const art = sideArt(shape, from);
-      if (art) return {palm: pathPoly(smooth(art.body) + ' Z'), fins: art.fins.map((f) => finBone(f)), thumb: finBone(art.thumb)};
-    } else if (!from || from.k >= 1 || from.shape === shape) {
-      const a = FACE[shape];
-      if (a) return {palm: pathPoly(palmD(a.yk)), fins: [...a.fins, ...(a.index ? [a.index] : [])].map((f) => finBone(f)), thumb: finBone(a.thumb)};
-    }
+  if (side) {
+    const art = sideArt(shape, from);
+    if (art) return {palm: pathPoly(smooth(art.body) + ' Z'), fins: art.fins.map((f) => finBone(f)), thumb: finBone(art.thumb)};
+  } else if (!from || from.k >= 1 || from.shape === shape) {
+    const a = FACE[shape];
+    if (a) return {palm: pathPoly(palmD(a.yk)), fins: [...a.fins, ...(a.index ? [a.index] : [])].map((f) => finBone(f)), thumb: finBone(a.thumb)};
   }
   const pose = handPose(shape, q, from);
   if (pose) {
@@ -604,13 +601,13 @@ const mixKey = (shape: HandShape, from?: HandMix) => (from && from.k < 1 && from
 const AUDIT = new Map<string, {gap: number; notch: number}>();
 /** The self-check of a hand drawing: gap — how far a finger base (or the thumb base) is outside the palm outline (a finger torn off);
  *  notch — the deepest notch between neighbouring fingers (both fingers apart for that length from the tips), frame units. */
-function drawAudit(shape: HandShape, view: HandView, q = 0, from?: HandMix, rig = false): {gap: number; notch: number} {
+function drawAudit(shape: HandShape, view: HandView, q = 0, from?: HandMix): {gap: number; notch: number} {
   // (the drawing depends only on the shape, the view, the progress q and the transition — the result is remembered: the journal is
   // written for every hand of every frame)
-  const key = `${shape}|${view}|${q.toFixed(2)}|${mixKey(shape, from)}|${rig ? 1 : 0}`;
+  const key = `${shape}|${view}|${q.toFixed(2)}|${mixKey(shape, from)}`;
   const hit = AUDIT.get(key);
   if (hit) return hit;
-  const s = handSkel(shape, view, q, from, rig);
+  const s = handSkel(shape, view, q, from);
   let gap = 0;
   let notch = 0;
   if (s.palm) {
@@ -626,11 +623,11 @@ const GRIP = new Map<string, number>();
 /** The grip: how many fingers lie on a prop — the prop axis (a segment through c along a, 14 frame units both ways: the part of the prop
  *  inside the hand) passes under a finger, within its width. A fist holds a prop when at least three fingers lie on it: a prop along one
  *  finger (under none — next to the hand) is not a grip. */
-function gripAudit(shape: HandShape, view: HandView, q: number, from: HandMix | undefined, c: P, a: P, rig = false): number {
-  const key = `${shape}|${view}|${q.toFixed(2)}|${mixKey(shape, from)}|${rig ? 1 : 0}|${c[0].toFixed(1)},${c[1].toFixed(1)}|${a[0].toFixed(2)},${a[1].toFixed(2)}`;
+function gripAudit(shape: HandShape, view: HandView, q: number, from: HandMix | undefined, c: P, a: P): number {
+  const key = `${shape}|${view}|${q.toFixed(2)}|${mixKey(shape, from)}|${c[0].toFixed(1)},${c[1].toFixed(1)}|${a[0].toFixed(2)},${a[1].toFixed(2)}`;
   const hit = GRIP.get(key);
   if (hit !== undefined) return hit;
-  const s = handSkel(shape, view, q, from, rig);
+  const s = handSkel(shape, view, q, from);
   const al = Math.hypot(a[0], a[1]) || 1;
   const A: P = [c[0] - (a[0] / al) * 14, c[1] - (a[1] / al) * 14];
   const B: P = [c[0] + (a[0] / al) * 14, c[1] + (a[1] / al) * 14];

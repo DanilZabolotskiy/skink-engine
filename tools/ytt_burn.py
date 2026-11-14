@@ -29,7 +29,6 @@ import numpy as np
 from PIL import Image
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
 
 FONT_CSS = "https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,400;0,500;0,700;1,400&display=block"
 CHROME = [os.environ.get("CHROME", ""), "C:/Program Files/Google/Chrome/Application/chrome.exe",

@@ -10,7 +10,7 @@ import type {Hold, Look} from '../lib/character/looks';
 import {styleById} from '../lib/styles';
 
 /** Figures: a man in a jacket, a woman, a slim teenager in a hoodie, a wide one in a T-shirt (a bare arm), an old man (stooping), a child. */
-export const LOOKS: Record<string, Look> = {
+const LOOKS: Record<string, Look> = {
   man: {hair: 'short', top: 'jacket'},
   woman: {build: 'woman', hair: 'bob', top: 'cardigan', w: 0.9},
   slim: {hair: 'short', top: 'hoodie', w: 0.85},

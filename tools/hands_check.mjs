@@ -93,7 +93,7 @@ const LIM = {
 };
 
 /** Finger joint limits, degrees (lib/character/hand.ts, JOINT_LIM): the base, the middle, the far joint; a bend only towards the palm (≥ 0). */
-const FINGER_LIM = [91.7, 111.8, 71.7];
+const FINGER_LIM = [91.7, 111.7, 71.6];
 const THUMB_FLEX = 68.8;
 const FINGER_NAMES = ['index', 'middle', 'ring', 'little'];
 const JOINT_NAMES = ['at the base', 'at the middle joint', 'at the far joint'];
@@ -416,7 +416,7 @@ if (sweepMode) {
         if (a.view !== b.view) flips++;
       }
     } else flips = 0;
-    // a jittering view: within one entry or exit of a gesture the hand view changes more than three times
+    // a jittering view: within one entry or exit of a gesture the hand views change more than six times (both arms counted)
     if (flips > 6) {
       hit(s, s.arms[0], {rule: 'jump', msg: `the hand view changed ${flips} times within a gesture motion — jitter`});
       flips = 0;

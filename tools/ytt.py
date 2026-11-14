@@ -184,8 +184,7 @@ def card_rect(c):
 
 
 class Chapter:
-    def __init__(self, wd, off):
-        self.wd, self.off = wd, off
+    def __init__(self, wd):
         self.tl = json.loads((wd / 'timeline.json').read_text(encoding='utf-8'))
         self.fps = self.tl['fps']
         self.dur = self.tl['frames'] / self.fps
@@ -380,14 +379,14 @@ def configure(wd):
     return cfg
 
 
-def pages(ed, min_dur=None):
+def pages(ed):
     """The pages of an episode: [{a, z, rows, color, who, line, ch, pos, hit}], the time — of the episode."""
     chs = chapters(ed)
     cfg = configure(chs[0])
-    min_dur = min_dur or cfg.get('min_dur', 0.9)
+    min_dur = cfg.get('min_dur', 0.9)
     out, off = [], 0.0
     for wd in chs:
-        ch = Chapter(wd, off)
+        ch = Chapter(wd)
         cues = ch.tl['cues']
         v = voice(wd)
         starts = []
@@ -505,6 +504,7 @@ def main():
     a = ap.parse_args()
     ed = Path(a.dir).resolve()
     base = Path(a.out) if a.out else ed / f'{ed.parent.name}_{ed.name}'
+    base.parent.mkdir(parents=True, exist_ok=True)
     if a.journal:
         journal(ed)
     pgs = pages(ed)

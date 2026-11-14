@@ -61,13 +61,13 @@ export const JOINT_LIM = {mcp: 1.6, pip: 1.95, dip: 1.25, spread: 0.22, flex: 1.
 const cl01 = (v: number) => Math.max(0, Math.min(1, v));
 const clr = (v: number, hi: number) => Math.max(0, Math.min(hi, Number.isFinite(v) ? v : 0));
 /** A pose within the joint limits: whatever is outside them is brought to the nearest natural position. */
-export const clampPose = (p: HandPose): HandPose => ({
+const clampPose = (p: HandPose): HandPose => ({
   f: p.f.map((c) => [clr(c[0], JOINT_LIM.mcp), clr(c[1], JOINT_LIM.pip), clr(c[2], JOINT_LIM.dip)]) as HandPose['f'],
   spread: clr(p.spread, JOINT_LIM.spread),
   th: {abd: cl01(p.th.abd), flex: clr(p.th.flex, JOINT_LIM.flex), opp: cl01(p.th.opp)},
 });
 /** A transition between poses by the joint angles: the fingers bend and unbend, the drawing is not swapped. */
-export const mixPose = (a: HandPose, b: HandPose, k: number): HandPose => {
+const mixPose = (a: HandPose, b: HandPose, k: number): HandPose => {
   const m = (x: number, y: number) => x + (y - x) * k;
   return {
     f: a.f.map((c, i) => [m(c[0], b.f[i][0]), m(c[1], b.f[i][1]), m(c[2], b.f[i][2])]) as HandPose['f'],
