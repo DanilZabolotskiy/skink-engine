@@ -3,7 +3,10 @@
 python tools/pipeline/run.py <script.md | chapter folder> [--lang en] [--steps all] [--go] [--estimate]
        [--until 120] [--scenes 01,02] [--model eleven_v4] [--concurrency 4] [--style western] [--no-stt] [--force-render] [--work DIR]
        [--no-guard] [--no-precheck] [--no-hands]
-python tools/pipeline/run.py episode <episodes/s01e01/en>   — join the chapters of an episode
+python tools/pipeline/run.py episode <episodes/s01e01/en> [--out FILE]   — the episode master 1920×1080: the chapters joined + sound (mix.wav → AAC 192k)
+python tools/pipeline/run.py episode <episodes/s01e01/en> --4k [--chapters 01,02] [--batch 5400] [--concurrency 4] [--force-render]
+       — a 3840×2160 CRF 18 master: the chapters are rendered anew with scale 2 (not an upscale) into <episode>/master4k/chNN/;
+         --chapters — only the render of these chapters, no joining; --batch — frames per place in the CPU queue
 
 Steps: parse, voice, timeline, precheck, render, audio, assemble, check, guard (by default all in order).
 precheck — staging checks before render on frames drawn from code (tools/pipeline/precheck.py → check/precheck/report.md): with errors
@@ -163,25 +166,66 @@ def guard_step(ch: Channel, wd: Path):
 
 
 def episode(a):
+    """The episode master: by default 1920×1080 — the finished chapters (render/video.mp4) joined without re-encoding; --4k — 3840×2160:
+    the same compositions and timeline.json of the chapters anew with scale 2 (the vector frame is drawn anew, not an upscale), scene by
+    scene in <episode>/master4k/chNN/ (a cache as for a chapter; the folders of accepted chapters are not touched), in chunks of --batch
+    frames through the CPU queue. Video — h264 CRF 18 (render.CRF). Sound — mix.wav of the chapters (AAC 192k, the same loudness). The
+    output goes to a temporary <name>.tmp.mp4 and replaces <episode>_<language>.mp4 only as a whole."""
     ed = Path(a.dir).resolve()
     chs = sorted(p for p in ed.glob('ch*/ch*.mp4'))
     if not chs:
         raise PipelineError(f'{ed} has no chapters ch*/ch*.mp4')
-    out = ed / f'{ed.parent.name}_{ed.name}.mp4'
+    if a.chapters and not a.k4:
+        raise PipelineError('--chapters — only with --4k (a 4K render of these chapters)')
+    vids = [p.parent / 'render' / 'video.mp4' for p in chs]
+    if a.k4:
+        want = {f'ch{c.strip().zfill(2)}' for c in a.chapters.split(',')} if a.chapters else None
+        vids = []
+        t0 = time.time()
+        for p in chs:
+            wd = p.parent
+            rd = ed / 'master4k' / wd.name
+            vids.append(rd / 'video.mp4')
+            if want is not None and wd.name not in want:
+                continue
+            log(f'4K master: {wd.name}')
+            tl = load_json(wd / 'timeline.json')
+            v = render.run(tl, wd / 'timeline.json', wd, concurrency=a.concurrency, force=a.force_render, scale=2, rd=rd, batch=a.batch)
+            n4, n1 = frames(v), frames(wd / 'render' / 'video.mp4')
+            if n4 != n1:
+                raise PipelineError(f'{rel(v)}: {n4} frames, the working chapter video has {n1}')
+        log(f'4K master: render {(time.time() - t0) / 60:.1f} min')
+        if want is not None:
+            log('--chapters: only the chapter render, no joining')
+            return
+    miss = [rel(v) for v in vids if not v.exists()]
+    if miss:
+        raise PipelineError('no chapter videos: ' + ', '.join(miss))
+    name = f'{ed.parent.name}_{ed.name}'
+    out = Path(a.out).resolve() if a.out else ed / f'{name}.mp4'
+    tmp = out if a.out else out.with_name(f'{name}.tmp.mp4')
     lv = ed / '_video.txt'
     la = ed / '_audio.txt'
-    lv.write_text(''.join(f"file '{(p.parent / 'render' / 'video.mp4').as_posix()}'\n" for p in chs), encoding='utf-8')
+    lv.write_text(''.join(f"file '{v.as_posix()}'\n" for v in vids), encoding='utf-8')
     la.write_text(''.join(f"file '{(p.parent / 'audio' / 'mix.wav').as_posix()}'\n" for p in chs), encoding='utf-8')
     ffmpeg('-f', 'concat', '-safe', '0', '-i', lv, '-f', 'concat', '-safe', '0', '-i', la, '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy',
-           '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', out)
+           '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', tmp)
+    if tmp != out:
+        os.replace(tmp, out)
     # episode subtitles — shifted by the chapters
     off, cues = 0.0, []
     for p in chs:
         tl = load_json(p.parent / 'timeline.json')
         cues += [{**c, 'from': c['from'] + off, 'to': c['to'] + off} for c in tl['cues']]
         off += tl['duration']
-    audio.srt({'cues': cues}, out.with_suffix('.srt'))
-    log(f'episode: {len(chs)} chapters, {off:.1f} s → {rel(out)}')
+    audio.srt({'cues': cues}, ed / f'{name}.srt')
+    log(f'episode: {len(chs)} chapters, {off:.1f} s, {"3840×2160" if a.k4 else "1920×1080"} → {rel(out)}')
+
+
+def frames(v: Path) -> int:
+    r = subprocess.run(['ffprobe', '-v', 'error', '-select_streams', 'v:0', '-count_packets', '-show_entries', 'stream=nb_read_packets',
+                        '-of', 'csv=p=0', str(v)], capture_output=True, text=True)
+    return int(r.stdout.strip() or 0)
 
 
 def main():
@@ -189,6 +233,12 @@ def main():
         ap = argparse.ArgumentParser()
         ap.add_argument('cmd')
         ap.add_argument('dir')
+        ap.add_argument('--4k', dest='k4', action='store_true', help='a 3840×2160 master: the chapters anew with scale 2')
+        ap.add_argument('--chapters', help='with --4k: only the render of these chapters: 01,02 (no joining)')
+        ap.add_argument('--batch', type=int, default=5400, help='--4k: frames per place in the CPU queue (default — 3 min of video)')
+        ap.add_argument('--concurrency', type=int, default=4)
+        ap.add_argument('--force-render', action='store_true')
+        ap.add_argument('--out', help='the master file instead of <episode>_<language>.mp4 (written right into it)')
         return episode(ap.parse_args())
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('script')

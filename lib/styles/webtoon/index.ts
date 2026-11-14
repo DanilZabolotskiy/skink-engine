@@ -3,6 +3,7 @@
 // body: ./body.tsx, hands: ./hands.tsx.
 import type {CharacterStyle} from '../../character/style';
 import {webtoonBody} from './body';
+import {handAudit} from './hands';
 import {HEAD_PIVOT, HEAD_SCALE, webtoonHead} from './head';
 
-export const webtoon: CharacterStyle = {id: 'webtoon', headScale: HEAD_SCALE, pivot: HEAD_PIVOT, head: webtoonHead, body: webtoonBody};
+export const webtoon: CharacterStyle = {id: 'webtoon', headScale: HEAD_SCALE, pivot: HEAD_PIVOT, head: webtoonHead, body: webtoonBody, handAudit};

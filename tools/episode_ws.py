@@ -5,6 +5,7 @@ python tools/episode_ws.py new s01e03 [--base main] [--path DIR] [--channel ID] 
 python tools/episode_ws.py list                        — the workplaces: path, branch, behind / ahead of main, edits
 python tools/episode_ws.py sync [--no-guard]           — (in a worktree) git merge main into the episode branch; then guard of what came
 python tools/episode_ws.py land [--push] [--no-guard]  — (in a worktree) sync, then main fast-forwards to the episode branch
+                                                         sync and land work from the worktree of an engine edit without an episode too (branch eng/<edit>)
 python tools/episode_ws.py remove s01e03 [--force]     — remove the worktree, its code copy and its branch (only merged into main; --force — any)
 
 One Claude Code session = one episode = one worktree. The main checkout (branch main) is the merge point: nobody works in it and its working
@@ -32,6 +33,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from tools.mirror import default_dst  # noqa: E402
+
+BRANCHES = ('ep/', 'eng/')  # workplace branches: an episode; an engine edit without an episode (sync and land — as for an episode)
 
 EP = re.compile(r'^s\d+e\d+$')
 MAIN = os.environ.get('SKINK_MAIN_BRANCH', 'main')
@@ -182,7 +185,7 @@ def cmd_list(a):
     for w in worktrees():
         br = w.get('branch', '(detached)')
         ab = ''
-        if br.startswith('ep/'):
+        if br.startswith(BRANCHES):
             c = git('rev-list', '--left-right', '--count', f'{MAIN}...{br}', cwd=main).split()
             ab = f' · behind {MAIN} {c[0]}, ahead {c[1]}'
         dirty = len([x for x in git('status', '--porcelain', '--untracked-files=no', cwd=w['path'], check=False).splitlines() if x])
@@ -190,9 +193,10 @@ def cmd_list(a):
 
 
 def this_ep() -> str:
+    """The branch of a workplace: an episode (ep/<episode>) or an engine edit without an episode (eng/<edit>) — sync and land are the same."""
     br = git('branch', '--show-current').strip()
-    if not br.startswith('ep/'):
-        raise SystemExit(f'this is not an episode workplace (branch "{br}", ep/<episode> needed): run the command in the episode worktree')
+    if not br.startswith(BRANCHES):
+        raise SystemExit(f'this is not an episode or engine workplace (branch "{br}", ep/<episode> or eng/<edit> needed): run the command in such a worktree')
     return br
 
 

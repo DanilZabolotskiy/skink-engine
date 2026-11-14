@@ -7,7 +7,7 @@ import React from 'react';
 import type {Outfit} from './Character';
 import type {Face} from './emotions';
 import type {Look} from './looks';
-import type {Body} from './body';
+import type {Body, Hand} from './body';
 import type {Pt} from './arm';
 
 /** Input of the head: head units — the head is drawn at full size with the crown at about y = −1006 (body.ts CROWN_Y); the core scales it
@@ -48,6 +48,10 @@ export type CharacterStyle = {
   pivot: number;
   head: (p: HeadIn) => HeadOut;
   body: (p: BodyIn) => BodyOut;
+  /** Optional self-check of the drawn hands for the pose journal (tools/hands_check.mjs): gap — how far a finger base is outside the palm
+   *  outline, notch — the deepest notch between neighbouring fingers (hand frame units); with grip (the centre and the axis of a prop in the
+   *  fist, hand frame) — wrap, how many fingers lie on the prop. A style without it skips the rules "finger", "fingers apart" and "grip". */
+  handAudit?: (h: Hand, grip?: {c: Pt; axis: Pt}) => {gap: number; notch: number; wrap?: number};
 };
 
 /** The style of every Character inside that does not set its own (Chapter.tsx provides the channel style). */

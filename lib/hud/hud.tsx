@@ -53,12 +53,13 @@ export type TitleBarProps = {
   counter?: Counter | null; // none — no cells
   counterLabel?: string; // a label before the cells
   stamp?: string; // a rotated stamp under the right end of the bar
+  stampBack?: boolean; // the stamp on a dark backing in a light colour: the background under it is dark or busy (staging: set hud stamp 1)
   opacity?: number;
   emphasis?: number; // 0..1 — a flash of the current cell (when a cell is crossed out)
 };
 
 /** Title bar at the top: an optional pulsing dot, the title, an optional counter; an optional stamp under it. */
-export const TitleBar: React.FC<TitleBarProps> = ({theme: th, t, title, counter, counterLabel, stamp, opacity = 1, emphasis = 0}) => {
+export const TitleBar: React.FC<TitleBarProps> = ({theme: th, t, title, counter, counterLabel, stamp, stampBack = false, opacity = 1, emphasis = 0}) => {
   const dot = 0.55 + 0.45 * Math.round(0.5 + 0.5 * Math.sin(t * Math.PI));
   const pulse = 0.75 + 0.25 * Math.sin(t * 4);
   return (
@@ -102,8 +103,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({theme: th, t, title, counter,
       </div>
       {stamp && (
         <div style={{
-          position: 'absolute', right: 30, top: BAR_H + 12, padding: '2px 12px', border: `3px solid ${th.dim}`,
-          color: th.dim, fontFamily: FONT_KR, fontWeight: 900, fontSize: 24, letterSpacing: 6, transform: 'rotate(-6deg)', borderRadius: 4,
+          position: 'absolute', right: 30, top: BAR_H + 12, padding: '2px 12px', border: `3px solid ${stampBack ? th.text : th.dim}`,
+          color: stampBack ? th.text : th.dim, fontFamily: FONT_KR, fontWeight: 900, fontSize: 24, letterSpacing: 6, transform: 'rotate(-6deg)', borderRadius: 4,
+          // a dim stamp merges with a dark or busy background: a light stamp on the bar colour — only by staging (set hud stamp 1)
+          background: stampBack ? th.bar : undefined,
         }}>{stamp}</div>
       )}
     </AbsoluteFill>

@@ -269,9 +269,9 @@ export function webtoonBody(p: BodyIn): BodyOut {
   const ps = {line: L, sw, folder: o.folder};
   const layer = (l: Layer, key: string): React.ReactNode => {
     if (l.t === 'arm') return armNode(l.S, l.E, l.W, key, l.part, l.one);
-    if (l.t === 'item') return <g key={key}>{drawItem(l.item, ps)}</g>;
+    if (l.t === 'item') return <g key={key} opacity={l.opacity}>{drawItem(l.item, ps)}</g>;
     const h = l.h;
-    const parts = handParts(h.shape, h.view, hst(h.k), h.q);
+    const parts = handParts(h.shape, h.view, hst(h.k), h.q, h.from);
     const node = l.back ? parts.back : parts.front;
     return node ? <g key={key} transform={handMatrix(h.W, h.f, h.u, h.k)}>{node}</g> : null;
   };

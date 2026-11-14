@@ -24,7 +24,9 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - Motion in the frame starts and ends below the bar, and leaves by the lower or a side edge or by a cut.
    - A figure from behind fills the frame with the head and the shoulders: not a nape at the frame edge ("a head without a body") and not a small head on a huge back. A climb seen from behind starts at the first step (the figure from the hips), not at a landing next to the camera.
    - The camera follows the main subject of the shot. Two figures — across the line between them; one standing behind another sitting — apart in the frame by half a body or more, not one above the other. After any change of a figure's place every view of the scene is checked for overlapping figures.
-   - A card of the script is not on the main prop of the shot (`cards → at`); a shot with a face at the top edge — the card at the bottom (`at: bottom`).
+   - A card of the script is not on the main prop of the shot (`cards → at`); a shot with a face at the top edge — the card at the bottom (`at: bottom`). A voice without its speaker in the scene — a caption card from the start of the line (`cards → on: "line:N"`).
+   - A close-up of a figure behind a counter — the camera to the side of the props on it (a monitor covered the face); on a wide shot the main figure is not behind the head of the nearer one.
+   - A close-up of a line after another frame of the same sheet — a cut, the frame stands on the line the whole shot (a kit option set by the staging): a ride from another part of the sheet took the whole shot, and the underline was drawn out of the frame.
    - A figure in a doorway — at full height, the prop of the action whole in the frame. "At the door" — right at the door; the prop of the line is not behind the figure.
    - A change of a screen (a phone, a monitor) is an event (a card slides in, the list moves), not a jump at a cut.
 2. **A static shot is static.** Frame or figure shake only by the story (a hit, a fright). A character at rest does not tremble.
@@ -38,6 +40,7 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
 3. **Parts of a figure do not vanish or appear abruptly:** ears, hair, hands.
    - An ear is one shape clipped by the silhouette, without transparency: the far one does not vanish at a turn, the near one is not covered by a strand of the back hair. The nose does not switch sides within a frame when the head turns through full face.
    - A small detail of a face grows from zero and goes to zero; a sweat drop — one per emotion, at the temple on the skin, it grows with the emotion and stays. Machine: "small jump".
+   - Precheck does not see a "small jump" — only the check step on the video does: a fix of a view change before the render is checked by the stills of every frame of the shot and `stage_check.small_pops`.
    - A detail of a turn grows from zero by the angle; the points of a contour are not thinned by the turn (a chain of curls would renumber).
    - Something leaves by narrowing or fading over 0.25 s or longer. A shadow coming from behind a corner is clipped by the plane of the corner.
    - The far eye and brow stay inside the face silhouette and under the hair; they narrow from the outer corner and go.
@@ -67,6 +70,8 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - A body has no side view: a turn by 180° is a head turn over the shoulder or a cut that makes the turn clear.
    - While the voice-over talks about walking, the figure walks (a climb to the next flight is a `cut` beat inside the shot, not a figure standing on a landing).
    - A look at the feet does not read from behind (the head does not nod from behind): a view from above, the figure walking towards the camera.
+   - The step of a figure a kit draws itself (not `Figure`) — a swing by `sin(π·walk)`: the phase is whole at a foot contact and at the end of the path, the legs close by themselves; another factor left the legs apart to the last frame of the motion. Machine: "small jump".
+   - A path does not pass within a metre of the camera: a figure passing by the camera is a huge cut-off head that vanishes behind it — go around the far end of the prop.
 4a. **No instant jumps.** A figure or an animal does not change its place within one frame: only by an animation or by a cut that makes sense. Machine: "appearing / vanishing within one frame".
 4b. **A character does not vanish from a shot without a reason.** A figure does not get stuck at the frame edge and does not leave as a big cut-off head: the beat ends by a cut earlier.
 4c. **The mouth opens by the syllables of the line** of the one who speaks in the frame; a still mouth during speech is a defect.
@@ -85,6 +90,15 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - **A neck from the front** is a column from the collar to the head joint, of one width; `headTilt` turns around that joint. Machine: `hands_check` "neck wedge", "neck slanted", "head not over the neck", "neck width"; by eye — `python tools/hands_sheet.py necks`.
    - The gender and the age of a role read on a wide shot by a sign of the clothes or the face (`look.build`, a collar, a print, a lip tone).
    - A prop in a hand is drawn the same as on the floor; a dark bag strap over dark trousers — `look.bagStrap`. A long tool — `hold mop`; knocking with it — `gesture knock`, then `mopRaised` while the figure waits.
+   - **A hand is a skeleton, the engine keeps its joints.** A hand pose is joint angles (`lib/character/hand.ts`: `HandPose`, the skeleton shapes): a finger bends only towards the palm and within `JOINT_LIM`, four fingers and a thumb, the left hand mirrors the right one. The elbow does not fold below 30° (`arm.ts`, `ik3`), the hand continues the forearm (`wristClamp`), the palm is not twisted (`liveView` — the nearest natural view), an arm at the chest keeps its elbow at the side (`body.ts`, `unwing`). A pose asking for the impossible is drawn as the nearest natural one and written to the journal (`wristCut`, `viewWant`) — the `hands_check` note "pose adjusted": fix the hand point or the pose in the staging.
+   - **A drawn hand is one solid silhouette:** the fingers grow from the palm (the base inside its outline), no gaps and no sharp ends; a grip shows as the fingers around the prop. In the `webtoon` style a hanging hand from the side is a "mitten" (the fingers together, slightly bent in one arc), a fist — a band of four bent fingers with the thumb on top, the prop passing under the band and out on both sides along one axis; a pen, a phone at the ear, a folder and a phone in the hand, a phone on the palm are drawn shapes; a transition bends the fingers (`Hand.from`) instead of swapping the drawing. A new shape is compared with the old one by a 1:1 crop: not worse than before — otherwise keep the old one. Machine (`CharacterStyle.handAudit`): `hands_check` "finger", "fingers apart", "wrap"; a "lump" instead of a fist and a flat palm next to a prop — by eye.
+   - A long prop in the fist (a mop handle): a lowered arm — the handle stands in front of the arm at the shoulder; a raised one — behind the arm, out of the fist behind the fingers: over the forearm it reads "through the arm". Machine: "prop through the arm". A rail from behind at the hip — the arm set in the frame, the elbow back towards the viewer, not out like a wing.
+   - The motion of a gesture turns the upper arm and the forearm in the frame from the arm pose to the gesture pose (a segment does not point "at the viewer" on the way), the hand shape goes by the joints: no swapped drawing, no jumping elbow; counting rises in front of the body, not through the side; from behind an arm that held something in front starts from that pose. From the front an arm with a prop in front or a bag does not make a gesture — give it to the free hand. Machine: `hands_check --motion` "jump".
+   - Writing in a folder: the pen tip on the sheet next to the fingers of the holding hand, not on them.
+   - After an edit of `lib/character` or of the hands of a style — `node tools/hands_check.mjs --sweep` (every hold, gesture and hand point without a render): 0 ("finger", "fingers apart", "wrap", "prop through the arm", "jump", "mirror").
+   - Two figures in a clinch — different clothing tones (the sleeves of one merged with the other: "without arms"); "down on one knee" — a leg with a visible knee bend and a foot, the head lower than the opponent's.
+   - A hand on a prop nearer to the camera than the figure (a counter, a sack) is covered by it: the figure as a layer after the prop clipped by its far edge with a strip of the forearm, or the hand point above the prop silhouette. From behind a gesture point in front of the body gives a foreshortened forearm ("hand without an arm"): put the point to the side and low, the arm almost straight.
+   - A prop is held as in life (a bottle neck up in every shot). A prop below the reach of a standing figure (there is no "bend down" pose): thrown — the hand leads it and lets go, it falls with acceleration and a sound; taken — the pick-up is hidden by a nearer prop, or the prop is already in the fist when seen, or it lies above the waist.
 
 ## Props
 
@@ -93,6 +107,7 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - A hand and a prop enter and leave by motion, not by transparency.
 6. **A sheet, a sign, a memo** does not slide away, vanish or appear without a reason.
    - No hand — no event: a button does not light up without a press, a badge does not turn over by itself.
+   - A hand a kit draws itself starts its motion where it hung without the event; a light of a button changes its colour with the motion of the event, not at a threshold; a figure of a kit changes its arm pose by the motion of an event, not by a switch at a state threshold.
    - A window closes by the motion of its sash, not by a change of the drawing.
    - **The motion and the sound of a prop come from one event** ([STAGING.md](STAGING.md)): a kit reads only the progress of the event; no times in kit code and no hand-written sound times; the state of a prop carries from shot to shot of a scene. Machine: "timing in kit code".
    - A motion of a prop is an event (`prop.spin`, `prop.fall`, `prop.roll`, `prop.stop`, `hand.out`), not an exponent of the shot time or a constant; a fallen prop lies on the floor in the next shots of the scene.
@@ -107,7 +122,9 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - A sign on a leaf lives in the plane of the leaf and moves with it; the colour of a moving leaf changes smoothly. A hand on the handle of a leaf going away lets it go smoothly (`out` ≥ 0.5 s).
    - Someone standing in a doorway is in the opening, not in front of the leaf; a leaf opening inwards is drawn before the wall around the opening and is seen only in it.
    - A door in any view follows its state (`door:<id>`).
+   - An entrance through an automatic door goes through the middle of the opening along the camera ray, not diagonally through a post of the frame.
 7a. **Numbers and texts on walls** (a floor, a flat) do not change abruptly inside a shot.
+   - The digits of a display or a timer in a kit come from the state of the event with steps (a key per digit), not from the frame time: otherwise every digit change is a "small jump".
 8. **Props are not transparent.** What lies flat is drawn before what stands.
    - What lies on a wall is drawn before what hangs on it; standing props after the light on the surfaces; a prop, then a puff, then the near hand.
    - A line width follows the depth of its visible part.
@@ -115,10 +132,15 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - The drawing at the start of a motion matches the drawing before the event; contents are clipped by their box.
    - A prop is drawn by its depth; "draw last" only for what is surely in front of everything.
    - A figure in a bed or on a sofa — after the furniture, clipped by the blanket or the seat; the far background (the sky, the house opposite) — first.
+   - A figure at a large prop (a counter) is layered by the side of the prop, not by the depth of the centres: on the way its silhouette swapped layers with the counter within a frame; figures converging in one place keep a constant order of layers.
+   - A sheet in a hand and on a wall is one drawing and one layer by its depth; before a motion the prop is in the hands, not in the air beside them. A layer rule of a prop that changes at a share of a motion is checked by the stills of the neighbouring frames of that share against every figure near it, translucent ones too (the check step does not catch it: the prop moves anyway).
+   - A carried prop over a stack of the same kit is an explicit layer after it for the whole motion; otherwise the layer swap at the end of the motion is a jump.
+   - A loop (a strap, a cord) around a prop: the back arc behind the prop and behind what is in the loop, the front arc in front, the ends meet at the buckle.
 9. **Every shape is recognisable** at the size it has in the frame; an unclear blot or a deformed shape is a defect. A small far prop that matters for the story reads; a fallen prop is recognised by its proportions and signs, not by its colour.
    - **Crop and view.** A prop at the edge is whole in the frame or out of it; a crop by the frame edge does not turn it into something else; a prop along a corridor is turned to the camera by its plane; a small prop of a wall is recognisable by a sign, or it is removed.
    - **Steam** — two or three ribbons of one wave thinning away; a ribbon is born and goes with zero length and width; no steam without a source in the frame.
-   - **Water** — a film slightly darker than the floor with a soft edge, the floor seen through it; the highlights are rare strokes across the look.
+   - **Water** — a film slightly darker than the floor with a soft edge, the floor seen through it; the highlights are rare strokes across the look. A puddle is not the shape and the place of the shadow of a prop: lighter or darker than the floor, with a rim.
+   - A flat prop edge-on to the camera at the leg of a figure reads as a cane — turn its plane to the camera. A figure a kit builds of sticks with rounded ends reads as a mannequin: a limb is one tube with a rounded bend, the shoulders come out of the chest silhouette. A prop in a close-up shows what it is (an open lunch box with its food, a bag with a soft outline and a turned-back rim), not a plain block.
    - **Dust** — a flat opaque puff that shrinks away; a trace in dust is one tone without an outline; dust falling from a ceiling is a stream of grains and flakes from the seam, not a chain of circles.
    - **Hair** — a line of even width in one wave, without a loop.
    - **Light** lies only within its surface: a flat step on a wall, a pool on the floor, no halo or wedge in the air; a lamp is a flat disc; in the dark both the props and the figure darken. The shadow of a figure grows from zero as it leaves the plane of the wall.
@@ -127,6 +149,7 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - An action that neither the pose library nor the sound library can show — the line changes to an action they can.
    - A renumbering of the shots after the voice-over is a paid re-voicing (the voice cache is named by the shot ids): a new shot after the voice-over goes last in its scene.
 9a. **The shot does what its script line says:** who is in the frame, what is in the hands, where they look. If a pose or an action is impossible, the line is changed explicitly, in every language version, and the report says so. Machine: "action without an event".
+   - A gesture is seen only if the frame shows what it is made with: `write` at a desk — the desk and the sheet in the frame and `hold: ["folder", "pen"]` in the `cast` of the shot; a figure of a kit holds what the `cast` of the shot gives it (no field — empty hands).
 
 ## Text in the frame
 
@@ -136,7 +159,10 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - A record goes in its column: not across the column line, not squeezed below a readable size, wrapped into the width of the column.
    - A text on a plane squeezed by the view more than twice, rotated more than 30° or cut by the frame edge or the bar is not drawn (`legible` of the frame journal); on a push-in — by the start and the end of the shot. An intended cut — `data-cut-ok` with a reason. Machine: "text rotated", "text squeezed".
    - A card is not on a head. Machine: "card on a head".
+   - A text a kit draws on a plane goes along the axis that runs left to right in the frame: a mirrored one the engine silently does not draw. The line that is the point of the shot is at least 16 px by the journal (`texts.px`).
 11a. **The place tag and the plates read:** a large font, contrast with the background. The title bar and the counter are right; a crossed-out cell is whole and crossed once.
+   - A dip covers the title bar and the counter: the counter cells do not glow on black.
+   - The stamp of the title bar reads on a dark or busy background: a light stamp on the bar backing — `{"do": "set", "obj": "hud", "stamp": 1}` from the first shot of the scene. An impression of a stamp is drawn by the kit: TEXT `stamp "…"` sets the bar badge. Machine: "impression in the bar badge".
 
 ## Sound
 
@@ -146,6 +172,8 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - A sound at a cut does not fall into the wrong shot. Machine: "sound on a cut".
    - The source of an event sound is in the frame of its shot (checked by the projection of the shot camera, not by the plan of the room); an unseen step — `cue` with `offscreen`. Machine: "sound on a still frame".
    - A manual binding (`cue`) is checked by the frame at that second; a source out of the frame is clear.
+   - "…" at the start of a line may be voiced by the TTS as a word: the voice is heard in the previous shot before the cut while the mouth is closed. An extra sound separated by silence — `voice_cut` in `staging.json` ([STAGING.md](STAGING.md)), without re-voicing and re-rendering. Machine: speech recognition, a negative offset.
+   - Speech recognition misses an interjection at the start of a line (a sigh, "uh…"): the "offset" equals its length. If the voice of the clip starts in time (its RMS envelope), the sync is right — a known false error, no re-voicing.
 13. **The background sound is explained by the place.** No unclear noise; running water only where the viewer knows where it comes from.
    - A place has a default bed that runs without a script line. Machine: "shot without ambience". A copied kit takes the bed of its own place, not of the neighbouring location.
    - The same bed across a cut is one track, different beds crossfade; no dropout at a cut. Machine: "ambience dropout at a cut".

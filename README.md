@@ -11,7 +11,8 @@ Skink is a 2D animated-video engine built on top of [Remotion](https://www.remot
 - **Documents and inserts** — papers and cards sliding in, stamps, notes, on-screen text cards; top-down shots of a table.
 - **Staging by events** — every motion and its sound come from one event in `staging.json` (`walk`, `look`, `gesture`, `door.open`, `paper.slide`, `stamp.press`, `lamp.flicker`…), so sound and picture cannot drift apart.
 - **HUD** — a themeable title bar with an optional counter and stamp, a place tag, an episode plate, text cards, subtitles as `.srt`.
-- **Long form** — a chapter pipeline (script → TTS → timeline → render → mix → checks) with a render cache per scene; episodes are joined from chapters.
+- **Long form** — a chapter pipeline (script → TTS → timeline → render → mix → checks) with a render cache per scene; episodes are joined from chapters into a 1080 master (CRF 18), a 4K master by a flag (`--4k`: the vector frames are drawn anew at 3840×2160, in chunks through the CPU queue).
+- **YouTube subtitles** — `.ytt` with a colour per speaker that moves off heads, cards and signs of the frame, a TTML fallback, and a check sheet drawn the way the YouTube player draws them (`tools/ytt.py`, `ytt_check.py`).
 - **Parallel episodes** — one git worktree per episode; a chapter only adds files (kits and roles found by folder, a config part per episode); guard re-checks only the accepted chapters an edit touches; one CPU render queue per machine — [docs/PARALLEL.md](docs/PARALLEL.md).
 - **Multi-agent production** — an example Claude Code skill and agents: every stage of a chapter is a fresh agent, 8 reviewers work in parallel on a ready review pack (grids, key frames, sound tables, 1:1 crops), each role reads only its rules, the API of the kits is generated — [AGENTS.md](AGENTS.md).
 

@@ -8,6 +8,7 @@ import {clamp} from '../anim';
 import {GradeCtx, gradeDom} from './grade';
 import {Shot, Timeline} from './types';
 import {StageCtx, StageJournal, StageLogCtx} from '../staging/journal';
+import {propAt} from '../staging/stage';
 import {HandMarkCtx} from '../character/hand';
 import {PoseLogCtx} from '../character/arm';
 import {StyleCtx} from '../character/style';
@@ -116,14 +117,15 @@ export const Chapter: React.FC<{timeline: Timeline; clean?: boolean; subs?: bool
       {!clean && cards.length > 0 && <Cards cards={cards} lt={lt} dur={dur} bottom={shot.cardsAt === 'bottom'} theme={theme} />}
       {!clean && shot.bar && (
         <TitleBar theme={theme} t={t} title={shot.bar} counter={shot.counter} counterLabel={ch.hud?.counterLabel} stamp={shot.stamp ?? undefined}
-          emphasis={shot.counter?.crossed.length ? 0.5 + 0.5 * Math.sin(lt * 8) : 0} />
+          stampBack={(propAt(shot.stage, 'hud', 'stamp', 0) ?? 0) > 0.5} emphasis={shot.counter?.crossed.length ? 0.5 + 0.5 * Math.sin(lt * 8) : 0} />
       )}
       {!clean && shot.place && (
         <PlaceTag theme={theme} lines={shot.place} f={f} from={shot.from + Math.round(0.4 * fps)} to={Math.min(shot.to - Math.round(0.2 * fps), shot.from + Math.round(5.6 * fps))}
           fade={Math.round(0.35 * fps)} />
       )}
       {!clean && shot.episodePlate && <EpisodePlate theme={theme} text={shot.episodePlate} brand={ch.hud?.brand} a={Math.min(clamp((lt - 0.2) / 0.3), clamp((3.2 - lt) / 0.4))} />}
-      {dip > 0.001 && <AbsoluteFill style={{background: `rgba(0,0,0,${dip})`}} />}
+      {/* the dip covers the whole frame: the counter cells of the title bar (z-index 1–2) showed through the black */}
+      {dip > 0.001 && <AbsoluteFill style={{background: `rgba(0,0,0,${dip})`, zIndex: 10}} />}
       {subs && !clean && <Subtitles t={t} cues={timeline.cues} accent={theme.accent} />}
       <StageJournal frame={f} shot={shot.id} />
     </AbsoluteFill>

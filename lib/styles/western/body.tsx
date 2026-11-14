@@ -157,7 +157,7 @@ export function westernBody(p: BodyIn): BodyOut {
   const ps = {line: L, sw: sw * 0.8, folder: o.folder};
   const handFill = p.mark ? '#FF00FF' : skin;
   const layer = (l: Layer, key: string): React.ReactNode => {
-    if (l.t === 'item') return <g key={key}>{drawItem(l.item, ps)}</g>;
+    if (l.t === 'item') return <g key={key} opacity={l.opacity}>{drawItem(l.item, ps)}</g>;
     if (l.t === 'hand') return l.back ? null : mitten(l.h, handFill, L, key);
     const S: Pt = [l.S[0], l.S[1]];
     const E: Pt = [l.E[0], l.E[1]];

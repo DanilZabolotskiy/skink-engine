@@ -9,8 +9,8 @@ import {armSwing, footLift} from './walk';
 import type {Face} from './emotions';
 import type {Hold, Look} from './looks';
 import {clamp, lerp} from '../anim';
-import {ARM_L1, ARM_L2, ArmLog, HandSide, HandView, Pt, V3, dirOf, handOf, ik3, sideVec, v3} from './arm';
-import {HAND_GRIP, HAND_LEN, HandShape, handPt} from './hand';
+import {ARM_L1, ARM_L2, ArmLog, ELBOW_MIN, HandSide, HandView, Pt, V3, dirOf, handOf, ik3, liveView, sideVec, v3, wristClamp} from './arm';
+import {HAND_GRIP, HAND_LEN, HandMix, HandShape, fistGrip, handPose, handPt, isRig} from './hand';
 import type {Hang, Item} from '../props/props';
 
 /** Height of the crown: a style scales its head around this point (CharacterStyle.headScale). */
@@ -51,15 +51,17 @@ const reachPalm = (s: number, w = 1): Pt => [s * 280 * w, -888];
 export type BodyGest = {pose: string; k: number; ph: number; side?: string; n?: number; grip?: string; dur?: number; stay?: boolean; ramp?: number};
 
 /** A hand: the frame (wrist W, fingers along f, thumb or palm side u, scale k), its shape and view; q — the progress of a live shape (count —
- *  how many fingers are up, rail — the tapping phase, tap — the thumb lift). at — a point of the hand frame in figure units. */
-export type Hand = {W: Pt; f: Pt; u: Pt; k: number; shape: HandShape; view: HandView; q: number; at: (x: number, y: number) => Pt};
+ *  how many fingers are up, rail — the tapping phase, tap — the thumb lift); from — a transition from another shape (the fingers bend by
+ *  the joints of the skeleton pose, hand.ts). at — a point of the hand frame in figure units. */
+export type Hand = {W: Pt; f: Pt; u: Pt; k: number; shape: HandShape; view: HandView; q: number; from?: HandMix; at: (x: number, y: number) => Pt};
 
 /** A layer of an arm pose, bottom to top: arm — upper arm and forearm (part upper — only the upper arm; one — the sleeve as one shape,
- *  without a joint line at the elbow); hand — the back part (behind a prop) or the front part of a hand; item — a prop. */
+ *  without a joint line at the elbow); hand — the back part (behind a prop) or the front part of a hand; item — a prop (opacity — a prop
+ *  fading out, e.g. the part of a mop handle in front of a rising arm). */
 export type Layer =
   | {t: 'arm'; S: V3; E: V3; W: V3; part: 'full' | 'upper'; one: boolean}
   | {t: 'hand'; h: Hand; back: boolean}
-  | {t: 'item'; item: Item};
+  | {t: 'item'; item: Item; opacity?: number};
 /** An arm: its layers; over — drawn over the head (a phone at the ear). From behind the arms are drawn under the torso. */
 export type ArmPose = {layers: Layer[]; over: boolean};
 
@@ -72,14 +74,30 @@ export type BodyIn = {
   tapLift?: number; // thumb lift in tap (1 — normal): a larger lift reads better on a dark medium shot
 };
 
+/** A hand of the pose journal: the hand and, with a prop in the fist, the prop centre and axis in the hand frame — for the self-check of
+ *  the drawn hand of a style (CharacterStyle.handAudit). */
+export type HandRef = {h: Hand; grip?: {c: Pt; axis: Pt}};
+
 /** Body pose. Half-widths of the torso before the body width w: sx — shoulders, cx0 — chest, wx — waist, hx — hips; shY — the shoulder
  *  line; stoop 0..1 — an elderly stoop; bob — vertical offset of the torso and the arms (running bounce, the straighten gesture); headDy —
  *  how much lower the head sits; lift — foot lift of the left and right leg on screen, 0..1, liftH — its height in units; armW — sleeve
- *  width; logs — arm poses for the pose journal. */
+ *  width; logs — arm poses for the pose journal, hands — the hands of these entries (one per entry). */
 export type Body = {
   fem: boolean; w: number; sx: number; cx0: number; wx: number; hx: number; shY: number; stoop: number; run: boolean;
-  bob: number; headDy: number; lift: [number, number]; liftH: number; armW: number; arms: ArmPose[]; logs: ArmLog[];
+  bob: number; headDy: number; lift: [number, number]; liftH: number; armW: number; arms: ArmPose[]; logs: ArmLog[]; hands: HandRef[];
 };
+
+/** The arm journal with the self-check of the drawn hands of a style (CharacterStyle.handAudit): fgap, notch and, with a prop in the fist,
+ *  wrap. Without an audit — the journal as it is. */
+export function armLogs(body: Body, audit?: (h: Hand, grip?: {c: Pt; axis: Pt}) => {gap: number; notch: number; wrap?: number}): ArmLog[] {
+  if (!audit) return body.logs;
+  return body.logs.map((a, i) => {
+    const r = body.hands[i];
+    if (!r) return a;
+    const au = audit(r.h, r.grip);
+    return {...a, fgap: +au.gap.toFixed(1), notch: +au.notch.toFixed(1), ...(au.wrap !== undefined ? {wrap: au.wrap} : {})};
+  });
+}
 
 export function bodyPose(p: BodyIn): Body {
   const {look, back} = p;
@@ -110,23 +128,31 @@ export function bodyPose(p: BodyIn): Body {
   const S3 = (s: number): V3 => [s * (sx * w - armW / 2), -738 + 6 * stoop, 0];
   // an adult hand: a fist is about a third of the head, an open hand spans from the brows to the chin
   const handK = (fem ? 1.4 : 1.55) * (look.build === 'child' ? 0.85 : 1);
-  /** Hand at wrist W: fingers along f; u — the natural side of the thumb (or the palm) for this hand and view. */
-  const handAt = (W: Pt, f: Pt, hand: HandSide, view: HandView, shape: HandShape, k = handK, q = 0): Hand => {
+  /** Hand at wrist W: fingers along f; u — the natural side of the thumb (or the palm) for this hand and view. from — a transition from
+   *  another shape (share of the way): the fingers bend by the joints, the drawing is not swapped. */
+  const handAt = (W: Pt, f: Pt, hand: HandSide, view: HandView, shape: HandShape, k = handK, q = 0, from?: HandMix): Hand => {
     const u = sideVec(hand, view, f);
-    return {W, f, u, k, shape, view, q, at: (x, y) => handPt(W, f, u, k, x, y)};
+    return {W, f, u, k, shape, view, q, ...(from ? {from} : {}), at: (x, y) => handPt(W, f, u, k, x, y)};
   };
   /** Axis of the prop held in a shape (HAND_GRIP) in figure coordinates. */
   const gAxis = (h: Hand, shape: HandShape): Pt => {
     const a = HAND_GRIP[shape]?.axis ?? [0, 1];
     return unit([0, 0], [h.u[0] * a[0] + h.f[0] * a[1], h.u[1] * a[0] + h.f[1] * a[1]]);
   };
+  /** A prop in the fist: its centre and axis in the frame by the view of the fist (fistGrip): from the side — along the hand under the band
+   *  of the fingers, with the back or the palm to the viewer — across the hand under the folded fingers. */
+  const fistAt = (h: Hand): {G: Pt; ax: Pt} => {
+    const g = fistGrip(h.view);
+    return {G: h.at(g.c[0], g.c[1]), ax: unit([0, 0], [h.u[0] * g.axis[0] + h.f[0] * g.axis[1], h.u[1] * g.axis[0] + h.f[1] * g.axis[1]])};
+  };
   const arm = (S: V3, E: V3, W: V3, part: 'full' | 'upper' = 'full', one = false): Layer => ({t: 'arm', S, E, W, part, one});
   const front = (h: Hand): Layer => ({t: 'hand', h, back: false});
   const behind = (h: Hand): Layer => ({t: 'hand', h, back: true});
-  const prop = (item: Item): Layer => ({t: 'item', item});
+  const prop = (item: Item, opacity?: number): Layer => ({t: 'item', item, ...(opacity !== undefined ? {opacity} : {})});
 
   const arms: ArmPose[] = [];
   const logs: ArmLog[] = [];
+  const hands: HandRef[] = [];
   const cl = p.face.clutch;
   const holds = p.holds;
   // drawing order of the arms: the folder first, so that the hand with the pen writes over it; otherwise the hand with a prop at the chest
@@ -157,7 +183,10 @@ export function bodyPose(p: BodyIn): Body {
       return pushRank(holds[i]) >= 2 && holds[1 - i] === 'none' ? 1 - i : i;
     })()
     : pushIdx;
-  order.forEach((idx) => {
+  /** Arm idx. dry — a trial pass: the pose of the arm without a gesture (how it holds its prop); nothing is drawn or logged — it returns the
+   *  elbow and the wrist of that pose; the motion of a gesture of an arm that held something starts from it. */
+  const armOf = (idx: number, dry = false): {E: V3; W: V3} | null => {
+    let dryEW: {E: V3; W: V3} | null = null;
     // holds are the figure's own hands, [right, left]. Facing the camera the right hand is on the left of the screen, from behind on the
     // right: the screen sides swap, and a prop stays in the same hand
     const s = (idx === 0 ? -1 : 1) * (back ? -1 : 1);
@@ -167,7 +196,9 @@ export function bodyPose(p: BodyIn): Body {
     let S = S3(s); // a raised arm (reach) raises the shoulder joint too
     const sideSwing = s * walkPh; // the arms swing towards each other (by screen side — in antiphase with the leg of the same side)
     const zb = back ? -1 : 1; // the figure's forward: facing the camera — towards the viewer, from behind — away from the viewer
-    const push = (layers: (Layer | null)[], over = false) => arms.push({layers: layers.filter((l): l is Layer => l !== null), over: over && !back});
+    const push = (layers: (Layer | null)[], over = false) => {
+      if (!dry) arms.push({layers: layers.filter((l): l is Layer => l !== null), over: over && !back});
+    };
     /** A front forearm shorter than 0.72 of its length in the frame (pointing towards or away from the viewer): the wrist stays and the
      *  elbow moves away from it in the frame, towards the old elbow, until the visible forearm reaches a length between 0.72 (r ≥ 0.72 —
      *  unchanged) and FORE_MIN (r → 0); if the shoulder cannot reach that point, the elbow takes the reachable point nearest to the old
@@ -205,33 +236,99 @@ export function bodyPose(p: BodyIn): Body {
       const pl = byPlane(c, W2, ez, wz);
       return {E: pl.E, W: [W2[0], W2[1], pl.T[2]], pole: pl.pole};
     };
+    /** The engine keeps the arm joints natural whatever the pose: the elbow does not fold more than a living one (ik3), the hand continues
+     *  the forearm — the wrist bend in the frame within natural limits (wristClamp); a free hand (a skeleton shape without a prop in the
+     *  layers) gets a view within a natural forearm rotation (liveView: a twisted palm is replaced by the nearest natural view). from — a
+     *  transition of the hand shape; fixed — the view is kept; palm — the palm normal of the pose; wk < 1 — the arm in motion. */
+    type SolveOpt = {bend?: number; dir?: Pt; dirK?: number; q?: number; keep?: boolean; from?: HandMix; fixed?: boolean; palm?: V3; wk?: number};
+    /** "Wing": the hand at the chest while the elbow sticks out beyond the torso silhouette farther than WING — the elbow returns to the side
+     *  in the frame (the wrist stays, the depths follow from the lengths, the signs are kept). Whatever the pose, the engine keeps an arm at
+     *  the chest with its elbow at the side. */
+    const WING = 30;
+    const unwing = (E: V3, W: V3): {E: V3; W: V3; pole: V3} | null => {
+      const lim = cx0 * w + WING;
+      if (back || Math.abs(W[0]) >= cx0 * w || s * E[0] <= lim) return null;
+      const ez = Math.sign((E[2] - S[2]) * zb) || 1;
+      const wz = Math.sign((W[2] - E[2]) * zb) || 1;
+      const pl = byPlane([s * lim, E[1]], pr(W), ez, wz);
+      return {E: pl.E, W: [W[0], W[1], pl.T[2]], pole: pl.pole};
+    };
     /** Solve the arm: wrist target T, elbow pole; the hand continues the forearm with bend (rad, + towards side u) or along dir. */
-    const solve = (T: V3, pole: V3, view: HandView, shape: HandShape, opt: {bend?: number; dir?: Pt; q?: number; keep?: boolean} = {}) => {
+    const solve = (T: V3, pole: V3, view: HandView, shape: HandShape, opt: SolveOpt = {}) => {
       const ik = ik3(S, T, pole);
       // from the front the visible forearm is no shorter than FORE_MIN of its length, otherwise the hand hangs in mid-frame without an
       // arm: the wrist stays, the elbow moves away from it in the frame (down and to the side, not out like a wing), depths follow
       // from the constant lengths
       const uf = !back && !opt.keep ? unfold(ik.E, ik.W) : null;
-      const E = uf ? uf.E : ik.E;
-      const W = uf ? uf.W : ik.W;
-      if (uf) pole = uf.pole;
+      const uw = !opt.keep ? unwing(uf ? uf.E : ik.E, uf ? uf.W : ik.W) : null;
+      const fx = uw ?? uf;
+      return place(fx ? fx.E : ik.E, fx ? fx.W : ik.W, fx ? fx.pole : pole, view, shape, opt);
+    };
+    /** The hand on a solved arm (elbow E, wrist W): the finger direction, the view, the wrist bend. */
+    const place = (E: V3, W: V3, pole: V3, view: HandView, shape: HandShape, opt: SolveOpt = {}) => {
       const E2 = pr(E);
       const W2 = pr(W);
       const lf = Math.hypot(W2[0] - E2[0], W2[1] - E2[1]);
-      const fa: Pt = lf > 2 ? unit(E2, W2) : [0, 1];
-      let f = opt.dir ? unit([0, 0], opt.dir) : fa;
-      if (!opt.dir && opt.bend) {
+      // the line the hand continues: the forearm in the frame; when it is a point in the frame (it points at the viewer or away: shorter
+      // than 0.15 of its length — under the hand it is not seen), it has no direction — the hand goes smoothly over to the line
+      // shoulder → wrist
+      const fa0: Pt = lf > 2 ? unit(E2, W2) : [0, 1];
+      const sw2 = Math.hypot(W2[0] - S[0], W2[1] - S[1]);
+      const kf = sw2 > 8 ? clamp((lf / ARM_L2 - 0.05) / 0.1) : 1;
+      const sa2: Pt = sw2 > 8 ? unit([S[0], S[1]], W2) : fa0;
+      const fa: Pt = kf >= 1 ? fa0 : unit([0, 0], [fa0[0] * kf + sa2[0] * (1 - kf), fa0[1] * kf + sa2[1] * (1 - kf)]);
+      let f = fa;
+      if (opt.bend) {
         const u0 = sideVec(hand, view, fa);
         const b = opt.bend;
         f = unit([0, 0], [fa[0] * Math.cos(b) + u0[0] * Math.sin(Math.abs(b)) * Math.sign(b), fa[1] * Math.cos(b) + u0[1] * Math.sin(Math.abs(b)) * Math.sign(b)]);
       }
-      const h = handAt(W2, f, hand, view, shape, handK, opt.q ?? 0);
-      return {E, W, h, pole};
+      if (opt.dir) {
+        // dirK — the way from "the hand along the forearm" to the direction of the pose: at the entry of a gesture the hand turns smoothly
+        // instead of flipping out of the frame
+        const d = unit([0, 0], opt.dir);
+        const dk = opt.dirK ?? 1;
+        if (dk >= 1) f = d;
+        else {
+          // the pose direction almost backwards along the forearm (it happens on the way): the hand does not turn to it — the shortest
+          // turn changes sides there, and the hand would flip out of the frame
+          const a0 = Math.atan2(f[0] * d[1] - f[1] * d[0], f[0] * d[0] + f[1] * d[1]);
+          const a = a0 * dk * clamp((Math.PI - Math.abs(a0)) / (Math.PI / 3));
+          f = [f[0] * Math.cos(a) - f[1] * Math.sin(a), f[0] * Math.sin(a) + f[1] * Math.cos(a)];
+        }
+      }
+      // the wrist: the hand does not break against the forearm (a forearm almost a point in the frame has no line, the bend is not seen)
+      const clampV = (v: HandView) => (lf > 2 ? wristClamp(fa, f, hand, v, lf / ARM_L2, opt.wk ?? 1) : {f, bend: 0, cut: 0});
+      // the view: a free hand is not twisted — the palm within a natural turn from the neutral of the arm (with the wrist bend of that view)
+      const free = !opt.fixed && isRig(shape) && !['phone', 'cup', 'ear', 'pen'].includes(shape);
+      const view1 = free ? liveView(view, hand, S, E, W, (v) => clampV(v).f, opt.palm) : view;
+      const wc = clampV(view1);
+      const h = handAt(W2, wc.f, hand, view1, shape, handK, opt.q ?? 0, opt.from);
+      return {E, W, h, pole, wristCut: wc.cut, viewWant: view1 !== view ? view : undefined};
     };
-    const log = (r: {E: V3; W: V3; h: Hand; pole: V3}, extra: Partial<ArmLog> = {}) => {
+    let gripRef: {c: Pt; axis: Pt} | undefined; // the prop in the fist of the next journal entry (itemLog) — for the grip check of a style
+    const log = (r: {E: V3; W: V3; h: Hand; pole: V3; wristCut?: number; viewWant?: HandView}, extra: Partial<ArmLog> = {}) => {
+      if (dry) {
+        dryEW = {E: r.E, W: r.W};
+        return;
+      }
       const L0 = HAND_LEN[r.h.shape];
+      const hp = handPose(r.h.shape, r.h.q, r.h.from);
+      const dg = (v: number) => +((v * 180) / Math.PI).toFixed(1);
       logs.push({side: s, hand, hold, back, S, E: r.E, W: r.W, L1: ARM_L1, L2: ARM_L2, pole: r.pole, f: r.h.f, u: r.h.u, view: r.h.view, shape: r.h.shape,
-        handLen: L0 * r.h.k, tip: r.h.at(0, L0), torsoX: cx0 * w, ...extra});
+        handLen: L0 * r.h.k, tip: r.h.at(0, L0), torsoX: cx0 * w,
+        ...(hp ? {fingers: hp.f.map((c) => c.map(dg)), thumb: [+hp.th.abd.toFixed(2), dg(hp.th.flex), +hp.th.opp.toFixed(2)]} : {}),
+        ...(r.h.from && r.h.from.k < 1 ? {mix: `${r.h.from.shape} → ${r.h.shape} ${r.h.from.k.toFixed(2)}`} : {}),
+        ...(r.wristCut && r.wristCut > 0.5 ? {wristCut: +r.wristCut.toFixed(1)} : {}), ...(r.viewWant ? {viewWant: r.viewWant} : {}), ...extra});
+      hands.push({h: r.h, ...(gripRef ? {grip: gripRef} : {})});
+      gripRef = undefined;
+    };
+    /** A prop in the fist — for the check (tools/hands_check.mjs): item — the prop segment in the frame from t0 to t1 along d, half-width
+     *  hw, over — drawn over the arm; the prop axis through the grip point of the fist goes to the grip check of the style (wrap). */
+    const itemLog = (h: Hand, d: Pt, t0: number, t1: number, hw: number, over: boolean): Partial<ArmLog> => {
+      const c = fistGrip(h.view).c;
+      gripRef = {c, axis: [d[0] * h.u[0] + d[1] * h.u[1], d[0] * h.f[0] + d[1] * h.f[1]]};
+      return {item: {p: h.at(c[0], c[1]), d, t0, t1, w: hw, over}};
     };
     // hangs along the body: almost straight, the elbow slightly back and out; swings back and forth with the step
     const hangT = (abd: number, fwd: number): V3 => v3.add(S, v3.mul(dirOf(s, abd, fwd), (ARM_L1 + ARM_L2) * 0.985));
@@ -264,8 +361,8 @@ export function bodyPose(p: BodyIn): Body {
     const waistElbow = (out = 18, y = -588): Pt => [s * (cx0 * w + out), y];
     // "pushes a door" from behind without a reach point: the arm goes from the side forward to the leaf at waist height, the elbow out,
     // the hand (with its prop, if any) lies on the leaf; the IK target and pole blend from the hanging arm over the gesture
-    const g = p.gest;
-    const pushK = g?.pose === 'push' && back && !p.reach && idx === pushIdx ? g.k : 0;
+    const g = dry ? undefined : p.gest;
+    const pushK = g?.pose === 'push' && back && !p.reach && idx === (gIdx >= 0 ? gIdx : pushIdx) ? g.k : 0;
     const mixV = (a: V3, b: V3, q: number): V3 => [lerp(a[0], b[0], q), lerp(a[1], b[1], q), lerp(a[2], b[2], q)];
     const pushT = (h: V3): V3 => (pushK > 0 ? mixV(h, PUSH_T(s), pushK) : h);
     const pushPole: V3 = pushK > 0 ? mixV(hangPole, PUSH_POLE(s), pushK) : hangPole;
@@ -293,8 +390,16 @@ export function bodyPose(p: BodyIn): Body {
     // Entry and exit follow the event hold k: the wrist target and the elbow pole go from the hanging arm to the gesture pose with constant
     // lengths. With a reach point the hand puts its grip point (a fist on the handle, a palm on the leaf, fingers on the rail) at reach;
     // the target depth comes from the arm length (the arm almost straight to the handle) and is small at the rail. A prop in the fist (a
-    // torch, keys) stays in the hand
-    const gk = g && idx === gIdx && g.k > 0.001 && ((g.pose === 'count' && !back) || (REACH_POSES.includes(g.pose) && !(g.pose === 'push' && back && !p.reach))) ? g.k : 0;
+    // torch, keys) stays in the hand.
+    // An arm busy with a prop in front or with a bag (a folder, a phone, a cup, a box, a bag) does not make a gesture: its pose is the grip,
+    // and the path of a gesture starts from a hanging arm — the arm would jump down and the prop would vanish (the pose sweep: "the wrist
+    // jumps by 200 units"). A gesture is made by a free arm or by an arm with a prop in the fist (a torch, keys). From behind what is held
+    // in front is hidden by the body: such an arm makes the gesture, its motion starts from the pose of the grip (a trial pass), not from a
+    // hanging arm
+    const free = ['none', 'count', 'stamp', 'flashlight', 'keys'].includes(hold);
+    const hidden = back && !['bag', 'tote', 'mop', 'mopRaised'].includes(hold);
+    const busy = !free && !hidden;
+    const gk = g && idx === gIdx && !busy && g.k > 0.001 && ((g.pose === 'count' && !back) || (REACH_POSES.includes(g.pose) && !(g.pose === 'push' && back && !p.reach))) ? g.k : 0;
     if (g && gk > 0) {
       const restT = run ? runArm().T : hangT(0.09, swingF + 0.03);
       const restPole = run ? runArm().pole : hangPole;
@@ -319,7 +424,10 @@ export function bodyPose(p: BodyIn): Body {
         // the palm faces the viewer within a natural turn. A hand in front of the chest with the palm to the viewer would need a turn over
         // 100°; a hand straight above the elbow would hide the upper arm behind the forearm, and the arm would read as one stick
         plane = [[S[0] + s * 32, -620], [S[0] + s * 9, -738]];
-        planeOut = true; // the hand rises out and up: the palm stays within a natural turn over the whole motion (across the belly it would not)
+        // the forearm rises in front of the body, through its middle (not through the side: on the way the arm stuck out sideways like a
+        // wing); the hand view on the way is within a natural turn (liveView): the back of the hand while the forearm is across the body,
+        // the palm when it has risen
+        planeOut = false;
         ({T: Tg, pole: poleG} = byPlane(plane[0], plane[1]));
         shape = 'count';
         view = 'palmar';
@@ -327,7 +435,9 @@ export function bodyPose(p: BodyIn): Body {
         q = Math.max(1, Math.min(4, Math.round(g.n ?? 4))) * clamp(g.ph / 0.88);
         note = 'counts on fingers: forearm towards the viewer';
       } else {
-        const def: Pt = g.pose === 'rail' ? [s * 168, -560] : [s * 150, back ? -610 : -630];
+        // the default point (the kit gave none) — to the side of the body within the reach of an arm with a natural wrist (at 150 units
+        // from the middle it was nearer than a hand length from the shoulder: the arm folded and the hand twisted to the point)
+        const def: Pt = g.pose === 'rail' ? [s * 168, -560] : [s * 205, back ? -610 : -630];
         aim = p.reach ?? def;
         shape = fistItem || g.pose === 'pull' || (g.pose === 'push' && g.grip === 'fist') ? 'fist' : g.pose === 'rail' ? 'rail' : 'flat';
         view = shape === 'fist' ? restView : shape === 'rail' || back ? 'dorsal' : 'palmar';
@@ -340,30 +450,141 @@ export function bodyPose(p: BodyIn): Body {
         const zMax = g.pose === 'rail' ? 50 : back ? 160 : 70;
         const d2 = Math.hypot(aim[0] - S[0], aim[1] - S[1]);
         reachW = clamp((ARM_L1 + ARM_L2 + 36 - d2) / 40);
-        Tg = [aim[0], aim[1], zb * Math.min(zMax, Math.sqrt(Math.max(0, (0.95 * (ARM_L1 + ARM_L2)) ** 2 - d2 * d2)))];
-        poleG = g.pose === 'rail' ? [s * 0.7, 0.35, -zb * 0.6] : back ? [s * 0.3, 0.85, -zb * 0.45] : [s * 0.18, 0.85, -zb * 0.5]; // the elbow down and back, not out to the side
+        const T0: V3 = [aim[0], aim[1], zb * Math.min(zMax, Math.sqrt(Math.max(0, (0.95 * (ARM_L1 + ARM_L2)) ** 2 - d2 * d2)))];
+        Tg = T0;
+        // the elbow down and back, not out to the side ("wing")
+        poleG = g.pose === 'rail' ? [s * 0.7, 0.35, -zb * 0.6] : back ? [s * 0.3, 0.85, -zb * 0.45] : [s * 0.18, 0.85, -zb * 0.5];
+        // a rail from behind near the body (a point below the shoulder, 110–240 units from it): the arm is longer than the way to the point,
+        // and the elbow had to go far out like a wing. The arm is set in the frame: the hand lies on the rail diagonally towards the body,
+        // the forearm steeper, almost vertical (a wrist bend towards the little finger up to 38°), the elbow back towards the viewer and only
+        // slightly out; the upper arm and the forearm are shorter in the frame (foreshortened) but visible: the forearm at least 0.56 of its
+        // length
+        if (g.pose === 'rail' && back && d2 > 110 && d2 < 240 && aim[1] - S[1] > 100 && (aim[0] - S[0]) * s > -70) {
+          const near = clamp((300 - d2) / 150);
+          const b0 = Math.atan2(-(aim[0] - S[0]) * s, aim[1] - S[1]); // the direction shoulder → point from the vertical, + towards the body
+          const th = b0 + (52 * Math.PI / 180) * near; // the hand
+          const al = th - (36 * Math.PI / 180) * near; // the forearm
+          const gl = Math.hypot(gripL[0], gripL[1]) * handK;
+          const fh: Pt = [-s * Math.sin(th), Math.cos(th)];
+          const W2: Pt = [aim[0] - fh[0] * gl, aim[1] - fh[1] * gl];
+          const lf = ARM_L2 * lerp(0.58, 0.95, clamp((d2 - 150) / 150));
+          const E2: Pt = [W2[0] + s * Math.sin(al) * lf, W2[1] - Math.cos(al) * lf];
+          ({T: Tg, pole: poleG} = byPlane(E2, W2, -1, 1));
+          dir = fh;
+        }
         if (shape !== 'rail') {
           // the hand continues the forearm if the forearm shows at least 20 % of its length in the frame; a shorter one is almost a point,
           // and the hand goes along the line shoulder → target instead (otherwise it would spin from a small shift)
-          const r0 = solve(Tg, poleG, view, shape, {q});
+          const r0 = solve(Tg, poleG, view, shape, {q, fixed: true});
           const fl = Math.hypot(r0.W[0] - r0.E[0], r0.W[1] - r0.E[1]);
           const ar = fl >= 0.2 * ARM_L2 ? unit([r0.E[0], r0.E[1]], [r0.W[0], r0.W[1]]) : unit([S[0], S[1]], aim);
           const up = shape === 'flat' && back ? s * 0.3 : 0; // from behind a palm on the leaf has its fingers slightly up; facing — along the arm (a bend towards the thumb is natural only up to 25°)
           dir = [ar[0] * Math.cos(up) - ar[1] * Math.sin(up), ar[0] * Math.sin(up) + ar[1] * Math.cos(up)];
         }
         for (let it = 0; it < 8; it++) {
-          const g1 = solve(Tg, poleG, view, shape, {q, dir}).h.at(gripL[0], gripL[1]);
+          const g1 = solve(Tg, poleG, view, shape, {q, dir, fixed: true}).h.at(gripL[0], gripL[1]);
           Tg = [Tg[0] + aim[0] - g1[0], Tg[1] + aim[1] - g1[1], Tg[2]];
+        }
+        // a check of the solution: the hand must continue the forearm and lie on the point. If the pose needs a broken wrist (the engine
+        // does not break it — the hand leaves the point) or the point is not reached, the arm is solved anew: the hand goes along the forearm
+        // line (along the line shoulder → target while the forearm is almost a point in the frame), the target is brought in by damped
+        // steps; the best approximation is taken
+        {
+          const chk = solve(Tg, poleG, view, shape, {q, dir, fixed: true});
+          const gc = chk.h.at(gripL[0], gripL[1]);
+          if (chk.wristCut > 0.5 || Math.hypot(aim[0] - gc[0], aim[1] - gc[1]) > 1.5) {
+            const up = shape === 'flat' && back ? s * 0.3 : 0;
+            const sa = unit([S[0], S[1]], aim);
+            const follow = (E: V3, W: V3): Pt => {
+              const fl = Math.hypot(W[0] - E[0], W[1] - E[1]);
+              const wk = clamp((fl / ARM_L2 - 0.15) / 0.25);
+              const fa = fl > 1 ? unit([E[0], E[1]], [W[0], W[1]]) : sa;
+              const b = unit([0, 0], [fa[0] * wk + sa[0] * (1 - wk), fa[1] * wk + sa[1] * (1 - wk)]);
+              return [b[0] * Math.cos(up) - b[1] * Math.sin(up), b[0] * Math.sin(up) + b[1] * Math.cos(up)];
+            };
+            let T1 = T0;
+            let d1: Pt = follow([S[0], S[1], 0], [aim[0], aim[1], 0]);
+            let best = Infinity;
+            for (let it = 0; it < 16; it++) {
+              const r1 = solve(T1, poleG, view, shape, {q, dir: d1, fixed: true});
+              const g1 = r1.h.at(gripL[0], gripL[1]);
+              const err = Math.hypot(aim[0] - g1[0], aim[1] - g1[1]) + 2 * r1.wristCut;
+              if (err < best) {
+                best = err;
+                Tg = T1;
+                dir = d1;
+              }
+              if (err < 0.4) break;
+              const nd = follow(r1.E, r1.W);
+              d1 = unit([0, 0], [d1[0] * 0.4 + nd[0] * 0.6, d1[1] * 0.4 + nd[1] * 0.6]);
+              T1 = [T1[0] + (aim[0] - g1[0]) * 0.8, T1[1] + (aim[1] - g1[1]) * 0.8, T1[2]];
+            }
+          }
         }
         note = g.pose === 'pull' ? 'pulls a door: arm to the handle foreshortened' : g.pose === 'push' ? 'pushes a door away: arm to the leaf foreshortened' : 'hand on the rail';
       }
       const gw = gk * reachW;
-      const on = gw > 0.45; // the hand shape changes halfway, at the fastest point of the motion
-      // a pose set in the frame plane: the elbow and the wrist go from the hanging arm to the gesture pose in the frame, so the elbow stays at
-      // the side in the middle of the motion (blending IK targets and poles would throw it out like a wing)
+      // the hand shape goes over by the joints (the fingers bend and unbend with the motion of the arm); the view — the one of the pose from
+      // the middle of the motion, before that — the view of the hanging arm; whatever view is asked for, a free hand is drawn within a
+      // natural turn (solve → liveView)
+      const on = gw > 0.45;
+      const dirK = clamp((gw - 0.2) / 0.6);
+      // a palm on a door leaf faces the target (away from the shoulder), on a rail — down; a fist on a handle has the thumb up and the palm
+      // towards the middle of the body
+      const palmG: V3 | undefined = shape === 'rail' ? [0, 1, 0] : shape === 'flat' && aim ? v3.norm([aim[0] - S[0], aim[1] - S[1], zb * 60]) : shape === 'fist' ? v3.norm([-s, 0.25, 0]) : undefined;
+      const restShape: HandShape = fistItem || run ? 'fist' : 'relaxed';
+      const mixK = clamp((gw - 0.12) / 0.6);
+      const mix: HandMix | undefined = isRig(shape) && shape !== restShape && mixK < 1 ? {shape: restShape, k: mixK * mixK * (3 - 2 * mixK)} : undefined;
+      // the motion of a gesture turns the arm segments IN THE FRAME: the upper arm and the forearm turn from the pose of the arm to the pose
+      // of the gesture each along its own arc in the frame, the visible length of a segment goes from the start one to the end one (a segment
+      // on the way does not point "at the viewer" — the hand is not left without an arm), the depth comes from the constant length. The
+      // elbow neither folds nor jumps. Blending the wrist targets and the elbow poles made the wrist path from the hip to a high point pass
+      // the shoulder: on the way the arm folded and the elbow jumped (the pose sweep: up to 120 units a frame). A segment that has to turn
+      // almost backwards (count: the forearm from "down" to "up") goes through side viaX: towards the middle of the body or where it points
+      // in the pose of the gesture — not outwards like a wing
+      const swing = (a: V3, b: V3, viaX: number, t: number): V3 => {
+        const la = Math.hypot(a[0], a[1]);
+        const lb = Math.hypot(b[0], b[1]);
+        const aa = la > 0.05 ? Math.atan2(a[1], a[0]) : Math.atan2(b[1], b[0]);
+        const ab = lb > 0.05 ? Math.atan2(b[1], b[0]) : aa;
+        let da = ab - aa;
+        while (da > Math.PI) da -= 2 * Math.PI;
+        while (da < -Math.PI) da += 2 * Math.PI;
+        if (viaX && Math.abs(da) > 2.3 && Math.cos(aa + da / 2) * viaX < 0) da -= Math.sign(da) * 2 * Math.PI;
+        const ang = aa + da * t;
+        const l = lerp(la, lb, t);
+        const z = (Math.sign(t < 0.5 ? a[2] : b[2]) || 1) * Math.sqrt(Math.max(0, 1 - l * l));
+        return [Math.cos(ang) * l, Math.sin(ang) * l, z];
+      };
+      const moving = gw < 0.999;
       let Tm = mixV(restT, Tg, gw);
       let Pm = mixV(restPole, poleG, gw);
-      if (plane) {
+      let EWm: {E: V3; W: V3} | null = null;
+      if (moving) {
+        const rest = (!free ? armOf(idx, true) : null) ?? ik3(S, restT, restPole);
+        const fin = solve(Tg, poleG, view, shape, {q, dir, fixed: true, keep: run});
+        const fg = v3.norm(v3.sub(fin.W, fin.E));
+        // the side the forearm turns through: the one it points to in the pose of the gesture (a point outside — through the side out); a
+        // forearm pointing almost straight up (count) — towards the middle of the body
+        const viaX = Math.abs(fg[0]) > 0.25 ? Math.sign(fg[0]) : -s;
+        const viaF: V3 = v3.norm([viaX, 0.12, zb * 0.15]);
+        const u = swing(v3.norm(v3.sub(rest.E, S)), v3.norm(v3.sub(fin.E, S)), 0, gw); // the upper arm — along the shortest arc
+        const fo = swing(v3.norm(v3.sub(rest.W, rest.E)), fg, viaX, gw);
+        // on the way the elbow does not fold more than a living one: the forearm is moved away from the upper arm up to ELBOW_MIN
+        const back1 = v3.mul(u, -1);
+        const ca = clamp(v3.dot(back1, fo), -1, 1);
+        const lim = (ELBOW_MIN + 2) * (Math.PI / 180);
+        let fo1 = fo;
+        if (Math.acos(ca) < lim) {
+          let perp = v3.sub(fo, v3.mul(back1, ca));
+          if (v3.len(perp) < 1e-3) perp = v3.sub(viaF, v3.mul(back1, v3.dot(viaF, back1)));
+          fo1 = v3.norm(v3.add(v3.mul(back1, Math.cos(lim)), v3.mul(v3.norm(perp), Math.sin(lim))));
+        }
+        const Em = v3.add(S, v3.mul(u, ARM_L1));
+        EWm = {E: Em, W: v3.add(Em, v3.mul(fo1, ARM_L2))};
+        Pm = u;
+      }
+      if (plane && !moving) {
         // the elbow goes in the frame from the hanging arm to the pose; the forearm turns around it through the side to the middle of the
         // body (not towards the viewer, where it would be shorter than half in the middle of the motion), its length in the frame between
         // the lengths at the ends
@@ -399,18 +620,22 @@ export function bodyPose(p: BodyIn): Body {
       // while the forearm goes across the body in the frame, the back of the hand faces the viewer (a natural turn), not the edge
       // of a hanging hand
       const midView: HandView = plane && gw > 0.12 ? (planeOut ? 'palmar' : 'dorsal') : restView;
-      const r = solve(Tm, Pm, on ? view : midView, on ? shape : fistItem || run ? 'fist' : 'relaxed', on ? {q, dir, keep: run} : {bend: back ? -0.1 : 0.1, keep: run});
+      // the hand view — the one of the pose while its palm is not twisted (a pose with a point has its own palm normal: towards the target,
+      // down onto the rail); otherwise the nearest natural one (solve → liveView). The hand direction goes from the forearm line to the
+      // direction of the pose over the motion (dirK)
+      const hopt: SolveOpt = {q, dir, dirK: dirK * dirK * (3 - 2 * dirK), bend: (back ? -0.1 : 0.1) * (1 - dirK), keep: run, from: mix, palm: on ? palmG : undefined, wk: clamp((gw - 0.6) / 0.4)};
+      const r = EWm ? place(EWm.E, EWm.W, Pm, on ? view : midView, mixK > 0 ? shape : restShape, hopt) : solve(Tm, Pm, on ? view : midView, mixK > 0 ? shape : restShape, hopt);
       let item: Layer | null = null;
       if (fistItem && r.h.shape === 'fist') {
-        item = hold === 'flashlight' ? prop({kind: 'flashlight', at: r.h.at(7, 27), axis: gAxis(r.h, 'fist'), len: back ? 1.15 : 1.3})
+        item = hold === 'flashlight' ? prop({kind: 'flashlight', at: fistAt(r.h).G, axis: fistAt(r.h).ax, len: back ? 1.15 : 1.3})
           : prop({kind: 'hang', what: hold as Hang, at: r.h.at(7, 44), swing: 0});
       }
       push([arm(S, r.E, r.W), item, front(r.h)]);
-      // a palm on the leaf faces the target (away from the shoulder), a palm on the rail faces down, a fist on the handle has the thumb up
-      // and the palm towards the middle of the body
-      const palmN: V3 | undefined = !on ? undefined : shape === 'rail' ? [0, 1, 0] : shape === 'flat' && aim ? v3.norm([aim[0] - S[0], aim[1] - S[1], zb * 60]) : shape === 'fist' ? v3.norm([-s, 0.25, 0]) : undefined;
-      log(r, {...(on && gripL && aim && gw > 0.98 ? {grip: r.h.at(gripL[0], gripL[1]), target: aim} : {}), allowFore: note, pose: g.pose, ...(palmN ? {palm: palmN} : {})});
-      return;
+      // the palm normal of the pose — into the journal, if the hand is drawn in the view of the pose (not brought to another one)
+      const palmN: V3 | undefined = on && r.h.view === view ? palmG : undefined;
+      const flG = hold === 'flashlight' && r.h.shape === 'fist' && !r.h.from ? itemLog(r.h, fistAt(r.h).ax, -40 * (back ? 1.15 : 1.3), 52 * (back ? 1.15 : 1.3), 12, true) : {};
+      log(r, {...(on && gripL && aim && gw > 0.98 ? {grip: r.h.at(gripL[0], gripL[1]), target: aim} : {}), allowFore: note, pose: g.pose, ...(palmN ? {palm: palmN} : {}), ...(moving ? {moving: true} : {}), ...flG});
+      return dryEW;
     }
 
     // ---------- a mop: the same pose facing the camera and from behind ----------
@@ -447,9 +672,17 @@ export function bodyPose(p: BodyIn): Body {
       const B: Pt = [lerp(B0[0], B1[0], up), lerp(B0[1], B1[1], up)];
       const du = unit(B, G);
       const top: Pt = [B[0] + du[0] * MOP_LEN, B[1] + du[1] * MOP_LEN];
-      push([arm(S, r.E, r.W), prop({kind: 'mop', base: B, top, rag: MOP_RAG, spread: 1 - up}), front(r.h)]);
-      log(r, {grip: G, target: G, layers: 'arm → mop → the fingers of the fist on the handle', ...(up > 0.2 ? {allowFore: 'raises the mop over the head: the arm up'} : {})});
-      return;
+      // layers: a lowered mop stands in front of the arm — the handle lies over the sleeve at the shoulder and goes under the fingers of the
+      // fist. A raised one — the handle behind the arm: over the forearm it went as a strip along the sleeve and read "through the arm"; it
+      // comes out of the fist behind the fingers, below the fist the forearm covers it. On the way up the front handle fades (over the first
+      // 40 % of the motion) instead of vanishing at once
+      const staffFront = clamp(1 - up * 2.5);
+      const mopItem: Item = {kind: 'mop', base: B, top, rag: MOP_RAG, spread: 1 - up};
+      push([prop(mopItem), arm(S, r.E, r.W), staffFront > 0.01 ? prop(mopItem, +staffFront.toFixed(1)) : null, front(r.h)]);
+      const gb = Math.hypot(G[0] - B[0], G[1] - B[1]);
+      log(r, {grip: G, target: G, ...itemLog(r.h, du, -gb, MOP_LEN - gb, 8, staffFront > 0.5), ...(up > 0.02 && up < 0.98 ? {itemMoving: true} : {}),
+        layers: up > 0.4 ? 'mop → arm → the fist on the handle' : 'arm → mop → the fingers of the fist on the handle', ...(up > 0.2 ? {allowFore: 'raises the mop over the head: the arm up'} : {})});
+      return dryEW;
     }
 
     // ---------- from behind ----------
@@ -466,7 +699,7 @@ export function bodyPose(p: BodyIn): Body {
         let item: Layer;
         let target: Pt = G;
         if (hold === 'flashlight') {
-          item = prop({kind: 'flashlight', at: G, axis: gAxis(r.h, 'fist'), len: 1.15});
+          item = prop({kind: 'flashlight', at: fistAt(r.h).G, axis: fistAt(r.h).ax, len: 1.15});
         } else {
           // keys hang from the bottom of the fist, a bag handle lies in the hooked fingers; when running the bag swings on it
           target = bagI ? G : Gb;
@@ -474,15 +707,15 @@ export function bodyPose(p: BodyIn): Body {
         }
         // from behind the bag hangs at the side by the arm, over the leg: the hand is drawn over the handle
         push([arm(S, r.E, r.W), item, front(r.h)]);
-        log(r, {grip: target === Gb ? Gb : G, target, ...pushLog});
-        return;
+        log(r, {grip: target === Gb ? Gb : G, target, ...pushLog, ...(hold === 'flashlight' ? itemLog(r.h, fistAt(r.h).ax, -40 * 1.15, 52 * 1.15, 12, true) : {})});
+        return dryEW;
       }
       if (hold === 'none' || hold === 'count' || hold === 'stamp') {
         const ra = runArm();
         const r = run && pushK <= 0 ? solve(ra.T, ra.pole, 'ulnar', 'fist') : solve(pushT(hangT(0.09, swingF + 0.02)), pushPole, 'ulnar', 'relaxed', {bend: -0.1});
         push([arm(S, r.E, r.W), front(r.h)]);
         log(r, pushK > 0.2 ? pushLog : run ? {allowFore: 'running: fist forward away from the viewer'} : {hangRef: thighMid});
-        return;
+        return dryEW;
       }
       if (hold === 'reach' && p.reach) {
         // from behind the palm is on the kit point (the spine of a folder on a shelf, moved by a kit event): the arm from the shoulder to
@@ -505,18 +738,18 @@ export function bodyPose(p: BodyIn): Body {
         const r = solve(pl.T, pl.pole, 'dorsal', 'relaxed', {keep: true});
         push([arm(S, r.E, r.W), front(r.h)]);
         log(r, {grip: p.reach, target: p.reach, layers: 'from behind: the arm to the point, the palm on it'});
-        return;
+        return dryEW;
       }
       // what is held in front (a folder, a phone, a cup, a box, a pen, a load) is hidden by the body from behind. The arm does not end at
       // the waist as a stump: the elbow is away from the side, the forearm shows from the elbow to the edge of the back and goes behind the
       // torso almost horizontally, and the sleeve is drawn as one L-shaped piece, so the arm reads as bent with the hand in front
       const Tf: V3 = hold === 'phoneEar' ? [s * 84, -786, -84] : hold === 'point' || hold === 'reach' ? [s * 230, -930, -40] : [s * 20, -608, -150];
       const poleB: V3 = hold === 'phoneEar' ? [s * 0.3, 0.55, 0.6] : hold === 'point' || hold === 'reach' ? [s * 0.6, 0.55, 0.55] : [s * 0.814, 0.568, 0.119];
-      const r = solve(Tf, poleB, 'dorsal', 'relaxed');
       const vis = hold === 'point' || hold === 'reach' || hold === 'phoneEar';
+      const r = solve(Tf, poleB, 'dorsal', 'relaxed', {fixed: !vis}); // a hand behind the body is not seen — no view is chosen for it
       push([arm(S, r.E, r.W, 'full', !vis), vis ? front(r.h) : null]); // the forearm goes behind the torso — the body covers its end
       log(r, {hidden: vis ? undefined : 'fore', hideHand: !vis, wristHidden: vis ? undefined : 'from behind the hand is behind the body'});
-      return;
+      return dryEW;
     }
 
     // ---------- from the front ----------
@@ -529,7 +762,7 @@ export function bodyPose(p: BodyIn): Body {
         const r = solve(pl.T, pl.pole, 'dorsal', 'relaxed');
         push([arm(S, r.E, r.W), front(r.h)]);
         log(r, {torsoX: cx0 * w, layers: 'forearm on the table → hand with its back up'});
-        return;
+        return dryEW;
       }
       case 'folder': {
         // the folder is held by its near edge, and the arm is one visible chain: the upper arm along the side, the elbow at the waist, the
@@ -547,16 +780,16 @@ export function bodyPose(p: BodyIn): Body {
         push([behind(r.h), prop({kind: 'folder', at: F, rot: -s * 2}), arm(S, r.E, r.W), front(r.h)]);
         const G = r.h.at(0, 30);
         log(r, {grip: G, target: G, torsoX: cx0 * w, layers: 'thumb behind the folder → folder → arm → hand with its back on the cover at the edge'});
-        return;
+        return dryEW;
       }
       case 'flashlight': {
         // a torch in a lowered hand: a fist seen from the thumb side, the bent fingers stepped across the torch, the thumb on top of the
         // index finger; the torch passes through the fist — the tail above it at the palm, the lens below
         const r = solve(hangT(0.13, 0.16 + swingF * 0.5), hangPole, 'radial', 'fist');
-        const G = r.h.at(7, 27);
-        push([arm(S, r.E, r.W), prop({kind: 'flashlight', at: G, axis: gAxis(r.h, 'fist'), len: 1.3}), front(r.h)]);
-        log(r, {grip: G, target: G, layers: 'torch → fist on top (tail and lens at the ends of the fist)'});
-        return;
+        const {G, ax} = fistAt(r.h);
+        push([arm(S, r.E, r.W), prop({kind: 'flashlight', at: G, axis: ax, len: 1.3}), front(r.h)]);
+        log(r, {grip: G, target: G, ...itemLog(r.h, ax, -40 * 1.3, 52 * 1.3, 12, true), layers: 'torch → fist on top (tail and lens at the ends of the fist)'});
+        return dryEW;
       }
       case 'pen': {
         // writes in the folder held by the other hand, the arm one visible chain: the elbow at the side at the waist, the forearm diagonally
@@ -572,7 +805,9 @@ export function bodyPose(p: BodyIn): Body {
         const wy = wr ? wr.k * 3.2 * Math.sin(wr.ph * 44) : 0;
         const gp = HAND_GRIP.pen!;
         const E2 = waistElbow(24, -586);
-        const tip1: Pt = [F[0] - s * 30 + wx, F[1] - 22 + wy];
+        // the tip is on a free part of the sheet next to the fingers of the holding hand, not on them (the pen "wrote" on the wrist of the
+        // other hand): nearer the middle of the sheet and higher; the forearm keeps at least 0.65 of its length in the frame
+        const tip1: Pt = [F[0] - s * (10 + 60 * Math.max(0, 1 - w)) + wx * 0.75, F[1] - 36 + wy];
         const hl = Math.hypot(gp.tip![0], gp.tip![1]) * handK;
         let fd: Pt = unit(E2, tip1);
         let W2: Pt = [tip1[0] - fd[0] * hl, tip1[1] - fd[1] * hl];
@@ -591,7 +826,7 @@ export function bodyPose(p: BodyIn): Body {
         const pB = r.h.at(gp.tail![0], gp.tail![1]);
         push([arm(S, r.E, r.W), behind(r.h), prop({kind: 'pen', tail: pB, tip: pT}), front(r.h)]);
         log(r, {grip: pT, target: tip1, torsoX: cx0 * w, layers: 'arm → fist → pen → index finger and thumb over the pen'});
-        return;
+        return dryEW;
       }
       case 'phone':
       case 'phoneEar': {
@@ -686,7 +921,7 @@ export function bodyPose(p: BodyIn): Body {
           const c1 = r.h.at(HAND_GRIP.ear!.c![0], HAND_GRIP.ear!.c![1]);
           log(r, {grip: c1, target: c1, pose: gp?.pose, allowFore: 'elbow in front at the chest: upper arm and forearm towards the viewer', layers: 'phone at the cheek → arm → hand with its back out, fingers on the cover'});
         }
-        return;
+        return dryEW;
       }
       case 'cup': {
         // a cup at the chest: the back of the hand at the near side, four fingers wrap the front wall in an arc with the tips at the far
@@ -698,7 +933,7 @@ export function bodyPose(p: BodyIn): Body {
         const Cc = r.h.at(gc.c![0], gc.c![1]);
         push([arm(S, r.E, r.W), behind(r.h), prop({kind: 'cup', at: Cc, scale: 0.78}), front(r.h)]);
         log(r, {grip: Cc, target: Cc, layers: 'thumb behind the cup → cup → hand and fingers in an arc on the wall'});
-        return;
+        return dryEW;
       }
       case 'box': {
         // a box at the waist in both hands: the hands on the side faces seen from the thumb side, the fingers go under the bottom (the tips
@@ -717,7 +952,7 @@ export function bodyPose(p: BodyIn): Body {
         // the box is drawn once: by the left arm on screen, or by this arm if the other hand holds something else
         push([arm(S, r.E, r.W), s < 0 || pair !== 'box' ? prop({kind: 'box', w: bw}) : null, front(r.h)]);
         log(r, {grip: G, target: [s * bw, G[1]], layers: 'arm → box → hand on the side face, fingers under the bottom'});
-        return;
+        return dryEW;
       }
       case 'bag':
       case 'tote':
@@ -731,7 +966,7 @@ export function bodyPose(p: BodyIn): Body {
         const item = prop({kind: 'hang', what: hold as Hang, at: G, swing: run && hook ? -16 * sideSwing : 0, strap: look.bagStrap});
         push([arm(S, r.E, r.W), item, front(r.h)]);
         log(r, {grip: G, target: G, layers: hook ? 'arm → handle → fingers hooked over it' : 'arm → prop → fist'});
-        return;
+        return dryEW;
       }
       case 'point': {
         // points at something up and to the side: the arm stretched towards the target, the open hand continues it — the palm towards the
@@ -741,7 +976,7 @@ export function bodyPose(p: BodyIn): Body {
         const r = solve(T, [s * 0.6, 0.8, -0.3], 'ulnar', 'open');
         push([arm(S, r.E, r.W), front(r.h)]);
         log(r);
-        return;
+        return dryEW;
       }
       case 'carry': {
         // carries something in both arms: the forearms crossed under it at the chest, the hands edge-on (thumb on top); the kit draws what
@@ -749,7 +984,7 @@ export function bodyPose(p: BodyIn): Body {
         const r = solve([-s * 30, s < 0 ? -574 : -582, 70], [s * 0.5, 0.8, -0.3], 'radial', 'relaxed', {dir: [-s, 0.12]});
         push([arm(S, r.E, r.W), front(r.h)]);
         log(r, {allowFore: 'forearms under the load towards the viewer'});
-        return;
+        return dryEW;
       }
       case 'reach': {
         // a palm on the wall behind the figure to the side (a framed sheet, a button). The figure faces the viewer, the wall is behind: the
@@ -781,7 +1016,7 @@ export function bodyPose(p: BodyIn): Body {
         const r = solve(pl.T, pl.pole, 'dorsal', 'flat', {dir: fd, keep: true});
         push([arm(S, r.E, r.W), front(r.h)]);
         log(r, {grip: r.h.at(0, 26), target: palm, allowFore: 'reaches for the wall behind: a straight arm foreshortened, both segments ≥ 60 %'});
-        return;
+        return dryEW;
       }
       default: {
         if (pair === 'phoneEar') {
@@ -789,7 +1024,7 @@ export function bodyPose(p: BodyIn): Body {
           const r = solve([s * 34, -556, 86], [s * 0.6, 0.5, -0.6], 'dorsal', 'relaxed', {dir: [-s * 0.85, 0.5]});
           push([arm(S, r.E, r.W), front(r.h)]);
           log(r, {allowFore: 'hand on the knees: forearm towards the viewer'});
-          return;
+          return dryEW;
         }
         // the free hand hangs at the body, seen from the thumb side, the fingers slightly bent to the palm with the tips stepped;
         // when running the arm is bent at the elbow and the fist swings at the waist, forward towards the viewer, without moving the
@@ -800,8 +1035,10 @@ export function bodyPose(p: BodyIn): Body {
         log(r, run ? {allowFore: 'running: fist forward towards the viewer'} : {hangRef: thighMid});
       }
     }
-  });
+    return dryEW;
+  };
+  order.forEach((idx) => armOf(idx));
 
   return {fem, w, sx, cx0, wx, hx, shY, stoop, run, bob: runBob + (run ? 4 : 0), headDy, lift: [footLift(p.walk, -1), footLift(p.walk, 1)],
-    liftH: run ? 88 : 36, armW, arms, logs};
+    liftH: run ? 88 : 36, armW, arms, logs, hands};
 }

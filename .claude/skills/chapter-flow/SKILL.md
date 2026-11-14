@@ -109,12 +109,13 @@ Do not start the next stage before the conditions of the previous one are met (b
 ### Acceptance — the orchestrator
 1. **Before handing in:** `python tools/lane.py guard --base main --events` — in the background, wait for the notification; the result — 0 differences. Only the accepted chapters the episode branch touches against `main` are checked: a chapter that only added files needs no guard; a touched core — all of them. A difference is a regression: give it back to a theme of F, or show the owner the pair "accepted | new".
 2. Check the machine reports: `CH/check/staging/report.md` — 0 errors; `CH/check/report.md` — no errors; no background processes.
-3. Add `episodes/{EP}/{LANG}/chNN` to `channels/<channel>/accepted/{EP}.txt` (no file — create it: a `#` line and the chapter lines).
+3. The line `episodes/{EP}/{LANG}/chNN` for `channels/<channel>/accepted/{EP}.txt` (no file — create it: a `#` line and the chapter lines) — **after the chapter commit** (step 5): a chapter on the accepted list is frozen, and `lane.py` would put its own files into the engine lane.
 4. Refresh `docs/API.md` (`python tools/api_ref.py`) if the code changed. It is not in git.
 5. **Commits by lanes** (docs/PARALLEL.md):
    - `python tools/lane.py check` — the lane of every file. Do not take edits of others.
    - The engine lane, if any — a separate commit after `lane.py guard` (the hook checks the stamp).
-   - The chapter — a commit of the chapter lane: the script, the staging, the episode files, a new kit, `accepted/{EP}.txt`.
+   - The chapter — a commit of the chapter lane: the script, the staging, the episode files, a new kit (without `accepted/{EP}.txt`).
+   - Then the line of the chapter in `accepted/{EP}.txt` — a separate commit (lane `any`).
    - `python tools/episode_ws.py land --push` — `main` fast-forwards to the episode branch, then push (only if the owner wants pushes).
 6. The journal — close the line of the chapter and add the result to the episode journal.
 7. **To the owner — briefly:** the path to `CH/chNN.mp4`; the time of the stages and the number of renders; what is not fixed (from SUMMARY and the notes of C').

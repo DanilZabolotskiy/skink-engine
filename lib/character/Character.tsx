@@ -6,7 +6,7 @@ import React from 'react';
 import {Face} from './emotions';
 import {DEFAULT_LOOK, Hold, Look} from './looks';
 import {noise1} from '../anim';
-import {BodyGest, CROWN_Y, bodyPose} from './body';
+import {BodyGest, CROWN_Y, armLogs, bodyPose} from './body';
 import {PoseLogCtx} from './arm';
 import {HandMarkCtx} from './hand';
 import {CharacterStyle, StyleCtx} from './style';
@@ -155,7 +155,8 @@ export const Character: React.FC<CharacterProps> = (p) => {
     const m = svgRef.current.getScreenCTM();
     if (!m) return;
     const tr = (q?: [number, number] | number[]) => (q ? [+(m.a * q[0] + m.c * q[1] + m.e).toFixed(1), +(m.b * q[0] + m.d * q[1] + m.f).toFixed(1)] : undefined);
-    const arms = body.logs.map((a) => ({...a, who: seed, scr: {S: tr(a.S), E: tr(a.E), W: tr(a.W), tip: tr(a.tip), grip: tr(a.grip)}}));
+    // the core journal with the self-check of the drawn hands of the style (CharacterStyle.handAudit)
+    const arms = armLogs(body, st.handAudit).map((a) => ({...a, who: seed, scr: {S: tr(a.S), E: tr(a.E), W: tr(a.W), tip: tr(a.tip), grip: tr(a.grip)}}));
     const bodyPts = {neck: tr([0, -800]), hip: tr([0, -524]), top: tr([0, -1010]), feet: tr([0, 0])};
     // head and neck at the front, for the neck check: the collar (y of the collar top, x of the neck edges at the collar), the top of the
     // neck (points under the head), the bottom of the head (jaw and chin) and the skull centre, all in frame pixels; h — the visible neck

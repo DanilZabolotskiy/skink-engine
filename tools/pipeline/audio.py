@@ -157,6 +157,11 @@ def run(tl: dict, wd: Path, ch: Channel):
         fxs = ch.voices.get('voice_suffix', {}).get('effects', {})
         fxe = fxs.get(ln.get('effect') or '')
         x = decode(vdir / ln['file'], mono=True, af=fxe['af'] if fxe else None)
+        if ln.get('head'):  # staging.json voice_cut: an extra sound at the start of a take — silence up to head (the clip place is the same), a 10 ms edge
+            k, f = min(len(x), int(ln['head'] * SR)), int(0.01 * SR)
+            x = x.copy()
+            x[:k] = 0
+            x[k:k + f] *= np.linspace(0, 1, len(x[k:k + f]), dtype=np.float32)
         g = 10 ** ((ln['target_lufs'] - (ln['lufs'] if ln['lufs'] is not None else -23)) / 20)
         if fxe and 'norm_db' in fxe and len(x):
             # a narrow band (phone) cuts the fundamental: loudness is matched after the filter — to the line target

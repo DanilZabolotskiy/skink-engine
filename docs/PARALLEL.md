@@ -52,13 +52,13 @@ The engine lane is `lib/`, `tools/`, `remotion/`, the docs, the channel module a
 2. `python tools/lane.py check` — the lane of every changed file, which accepted chapters use it, frozen files.
 3. `python tools/lane.py guard` — guard of the touched accepted chapters only (shared code — all of them) and their rebuild (`retime`) — 0. Before handing a chapter in — with `--events`. The result is a stamp.
 4. `git add <engine paths> && git commit` — the hook `tools/hooks/pre-commit` passes a commit of one lane whose files match the stamp.
-5. The edit reaches `main` with the episode branch — `python tools/episode_ws.py land`. If another episode needs it sooner — `land` right after the commit.
+5. The edit reaches `main` with the episode branch — `python tools/episode_ws.py land`. If another episode needs it sooner — `land` right after the commit. An engine edit without an episode — in its own worktree with a branch `eng/<edit>`: `sync` and `land` work from it too.
 6. Another episode takes it with `sync`.
 
 ## An accepted chapter → main
 
-1. Acceptance by the skill. The line of the chapter goes to `accepted/s01e02.txt`.
-2. A commit of the chapter lane: `git add <files of the chapter> && git commit`.
+1. Acceptance by the skill.
+2. A commit of the chapter lane: `git add <files of the chapter> && git commit`. Then the line of the chapter in `accepted/s01e02.txt` — a separate commit: a chapter on the accepted list is frozen, and before the commit `lane.py` would put its own files into the engine lane.
 3. `python tools/episode_ws.py land --push`:
    - `git merge main` into the episode branch;
    - guard of what came from `main` — the touched accepted chapters, its own ones too;

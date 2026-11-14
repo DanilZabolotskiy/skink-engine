@@ -1,12 +1,21 @@
-// Hands of the webtoon style — a library of drawn hand shapes: every grip has its own hand, the outline is one natural curve.
-// A shape is drawn in the hand frame of lib/character/hand.ts (the wrist at the origin, the fingers along +y, the thumb or the palm along
-// +x); the body places it with handMatrix.
-// Every finger is a tapering curve (a quadratic axis, a rounded tip), the palm is a Bézier curve; the silhouette is the union of the parts
-// (a thick outline stroke under the fill), fingers are separated by thin inner lines from the notches between the tips, and a finger in
-// front of another (side view) has its own edge. Grips are layered: back (behind the prop) and front (in front of it).
+// Hands of the webtoon style. Two ways of drawing, both in the same hand frame of lib/character/hand.ts and with the same journal of the
+// joint bends (the skeleton pose HandPose of the core):
+// 1) the skeleton (rig): a palm and four fingers of three phalanges plus the thumb, posed by the joint angles of the core. A finger bends
+//    only towards the palm and only within its joint (the core clamps the pose). It draws the hands with the back or the palm to the
+//    viewer: open, pressed to a sheet, counting on fingers, on a rail, on a table, around a cup, and from the side — hooked fingers (a bag)
+//    and a box; a transition between shapes blends the angles (the core: Hand.from);
+// 2) drawn shapes: from the side a hanging hand, a fist and an open hand (SIDE: one solid "mitten" silhouette, the fingers together, short
+//    lines between the fingers inside; a fist — a band of four bent fingers with the thumb on top — the skeleton from the side gave a
+//    "rake" of a hanging hand, a "lump" of a fist, and a flat palm next to the prop in the grips), a pen, a phone at the ear, a folder and a
+//    phone in the hand, a phone lying on the palm. The fingers start inside the palm and cannot come off it. A transition between the
+//    drawn side shapes blends their support points (mixSide), without swapping the drawing.
+// There are always four fingers and a thumb; the left hand mirrors the right one. How it is drawn: the silhouette is the union of the
+// palm and the fingers (a common outline as a thick stroke under the fill), the fingers are separated by thin lines (the thin outline of a
+// finger over its neighbour). No "C" curls, claws or sausages. Grips with a prop are layered: back (behind the prop) and front (in front
+// of it). handAudit — the self-check of the drawing for the pose journal (tools/hands_check.mjs).
 import React from 'react';
 import type {HandView} from '../../character/arm';
-import type {HandShape} from '../../character/hand';
+import {HandMix, HandPose, HandShape, handPose} from '../../character/hand';
 import {cr} from './common';
 
 /** bare — an arm without a sleeve (undershirt, T-shirt): no seam at the wrist, the hand continues the forearm as one shape. */
@@ -15,12 +24,14 @@ export type HandStyle = {fill: string; line: string; sw: number; shade: string; 
 // ---------- geometry ----------
 type P = [number, number];
 const f2 = (v: number) => (Math.abs(v) < 1e-9 ? '0' : v.toFixed(2));
+const fp = (p: P) => `${f2(p[0])} ${f2(p[1])}`;
+const cl01 = (v: number) => Math.max(0, Math.min(1, v));
 
 /** Smooth curve through points, two decimals (hand frame units are small). */
 const smooth = (pts: P[], closed = false) => cr(pts, closed, 1 / 6, true, 2);
 
 /** Finger: the axis is a quadratic curve B → C → T, half-width wb at the base and wt at the tip, the tip is rounded. */
-export type Fin = {B: P; C: P; T: P; wb: number; wt: number};
+type Fin = {B: P; C: P; T: P; wb: number; wt: number};
 type FinG = {L: P[]; R: P[]; cap: P[]; out: string};
 function finGeo(f: Fin, n = 9): FinG {
   const L: P[] = [];
@@ -51,8 +62,8 @@ function finGeo(f: Fin, n = 9): FinG {
   return {L, R, cap, out: smooth(ring, true)};
 }
 
-/** Finger edge ('L' or 'R') from fraction t0 to the tip — the inner line between fingers; wrap — how many points of the
- *  tip rounding to take. */
+/** Finger edge ('L' or 'R') from fraction t0 to the tip — the inner line between fingers; wrap — how many points of the tip rounding
+ *  to take. */
 function finEdge(g: FinG, side: 'L' | 'R', t0: number, wrap = 1): string {
   const n = g.L.length - 1;
   const i0 = Math.round(t0 * n);
@@ -64,8 +75,8 @@ function finEdge(g: FinG, side: 'L' | 'R', t0: number, wrap = 1): string {
 // ---------- hand layer ----------
 /** sil — closed parts of the silhouette (joined by a common outline); over — parts over the silhouette with their own edge (the thumb in
  *  front): fill — the fill, edge — an open outline; lines — thin inner lines (k — share of the outline width). */
-export type Over = {fill: string; edge: string};
-export type HandLay = {sil: string[]; over?: Over[]; lines?: {d: string; k?: number}[]};
+type Over = {fill: string; edge: string};
+type HandLay = {sil: string[]; over?: Over[]; lines?: {d: string; k?: number}[]};
 
 function handLayer(l: HandLay, st: HandStyle, key?: string): React.ReactNode {
   const {fill, line, sw} = st;
@@ -87,15 +98,15 @@ function handLayer(l: HandLay, st: HandStyle, key?: string): React.ReactNode {
   );
 }
 
-/** A row of fingers: silhouettes and inner lines between neighbours (the finger edge on the gapSide from fraction gapFrom to the tip). */
-export function fingers(fs: Fin[], gapFrom = 0.45, gapSide: 'L' | 'R' = 'R', k = 0.5) {
+/** A row of fingers: silhouettes and inner lines between neighbours (the finger edge on side gapSide from fraction gapFrom to the tip). */
+function fingers(fs: Fin[], gapFrom = 0.45, gapSide: 'L' | 'R' = 'R', k = 0.5) {
   const gs = fs.map((f) => finGeo(f));
   const lines = gs.slice(0, -1).map((g) => ({d: finEdge(g, gapSide, gapFrom, 1), k}));
   return {sil: gs.map((g) => g.out), lines, gs};
 }
 
-/** A finger over the silhouette (the thumb in front): the fill is the whole finger, the outline goes from fraction t0 along the startSide
- *  edge, round the tip and back along the other edge to fraction t1. */
+/** A finger over the silhouette (the thumb in front): the fill is the whole finger, the outline goes from fraction t0 along edge startSide,
+ *  around the tip and back along the other edge to fraction t1. */
 function thumbOver(f: Fin, t0: number, t1: number, startSide: 'L' | 'R' = 'L'): Over {
   const g = finGeo(f);
   const n = g.L.length - 1;
@@ -105,241 +116,539 @@ function thumbOver(f: Fin, t0: number, t1: number, startSide: 'L' | 'R' = 'L'): 
   return {fill: g.out, edge: smooth([...A, ...cap, ...Bs])};
 }
 
+// ---------- the skeleton drawing ----------
+// skeleton geometry, frame units. The knuckles are where the drawn hands have them (the back view, a right hand, the thumb — +x)
+const MCP: P[] = [[9.6, 34.5], [2.9, 36], [-3.8, 35.2], [-10.2, 32.6]];
+const FAN = [0.045, 0.005, -0.045, -0.1];
+const SEG: [number, number, number][] = [[10.7, 7.3, 5.7], [12, 8.2, 6.4], [10.8, 7.4, 5.8], [8.5, 5.8, 4.5]];
+const FW: [number, number][] = [[3.9, 3.1], [4.0, 3.2], [3.8, 3.0], [3.4, 2.7]]; // half-width at the base and at the tip
+const widths = (i: number): number[] => {
+  const [a, b] = FW[i];
+  return [a, a + (b - a) * 0.4, a + (b - a) * 0.72, b];
+};
+// the side view (radial, ulnar) is a three-quarter view from the back: across the hand it is narrower (K34X), the bend of the fingers and
+// the thumb come out towards the palm (+x) by a share K34Z of their depth. A pure side view folded four fingers into one "claw"
+const K34X = 0.82;
+const K34Z = 0.57;
+const THW = [5.3, 4.8, 4.2, 3.5];
+const THL = [10.5, 8.5, 7.5];
+
+const capsuleD = (A: P, B: P, ra: number, rb: number): string => {
+  const dx = B[0] - A[0], dy = B[1] - A[1];
+  const l = Math.hypot(dx, dy);
+  if (l < 0.05) {
+    const r = Math.max(ra, rb);
+    return `M ${f2(A[0] - r)} ${f2(A[1])} a ${f2(r)} ${f2(r)} 0 1 0 ${f2(2 * r)} 0 a ${f2(r)} ${f2(r)} 0 1 0 ${f2(-2 * r)} 0 Z`;
+  }
+  const nx = -dy / l, ny = dx / l;
+  return `M ${f2(A[0] + nx * ra)} ${f2(A[1] + ny * ra)} L ${f2(B[0] + nx * rb)} ${f2(B[1] + ny * rb)} A ${f2(rb)} ${f2(rb)} 0 0 0 ${f2(B[0] - nx * rb)} ${f2(B[1] - ny * rb)} L ${f2(A[0] - nx * ra)} ${f2(A[1] - ny * ra)} A ${f2(ra)} ${f2(ra)} 0 0 0 ${f2(A[0] + nx * ra)} ${f2(A[1] + ny * ra)} Z`;
+};
+/** A chain of segments — capsules with shared joints (a rounded bend without self-intersections). */
+const chainD = (pts: P[], ws: number[], i0 = 0, i1 = pts.length - 1): string => {
+  const out: string[] = [];
+  for (let i = i0; i < i1; i++) out.push(capsuleD(pts[i], pts[i + 1], ws[i], ws[i + 1]));
+  return out.join(' ');
+};
+const circleD = (c: P, r: number) => `M ${f2(c[0] - r)} ${f2(c[1])} a ${f2(r)} ${f2(r)} 0 1 0 ${f2(2 * r)} 0 a ${f2(r)} ${f2(r)} 0 1 0 ${f2(-2 * r)} 0 Z`;
+const step = (p: P, ang: number, l: number): P => [p[0] + Math.sin(ang) * l, p[1] + Math.cos(ang) * l];
+
+/** A skeleton layer: sil — the shapes of the common outline; ops — in order: part — a part with its own thin outline (a finger over its
+ *  neighbour), fill — a fill without an outline (the palm, a patch at a finger base); lines — thin lines; wrist — the layer has the
+ *  wrist. */
+type RigOp = {d: string; kind: 'part' | 'fill'};
+type RigLay = {sil: string[]; ops: RigOp[]; lines?: {d: string; k?: number}[]; wrist?: boolean};
+
+function rigLayer(l: RigLay, st: HandStyle, key?: string): React.ReactNode {
+  const {fill, line, sw} = st;
+  const t = sw * 0.42;
+  return (
+    <g key={key}>
+      {l.sil.map((d, i) => <path key={`o${i}`} d={d} fill={line} stroke={line} strokeWidth={2 * sw} strokeLinejoin="round" />)}
+      {l.ops.map((o, i) => (o.kind === 'fill' ? <path key={`p${i}`} d={o.d} fill={fill} /> : (
+        <g key={`p${i}`}>
+          <path d={o.d} fill={line} stroke={line} strokeWidth={2 * t} strokeLinejoin="round" />
+          <path d={o.d} fill={fill} />
+        </g>
+      )))}
+      {/* bare arm: no seam at the wrist — a skin strip covers the hand outline across the wrist (as in handLayer) */}
+      {st.bare && l.wrist ? <rect x={-10.3} y={-2 - sw - 1.2} width={21.4} height={sw + 5.2} fill={fill} /> : null}
+      {(l.lines ?? []).map((q, i) => <path key={`l${i}`} d={q.d} fill="none" stroke={line} strokeWidth={sw * (q.k ?? 0.5)} strokeLinecap="round" strokeLinejoin="round" />)}
+    </g>
+  );
+}
+
+type Curl = HandPose['f'][number];
+type Chain = {pts: P[]; ws: number[]};
+type Proj = (x: number, y: number, z: number) => P;
+/** Projection of a hand point (x — towards the thumb, y — towards the fingers, z — towards the palm) onto the frame of a view. */
+const projOf = (view: HandView): Proj => {
+  if (view === 'dorsal' || view === 'palmar') return (x, y) => [x, y];
+  const sg = view === 'ulnar' ? -1 : 1;
+  return (x, y, z) => [sg * x * (1 - (1 - K34X) * cl01(y / 24)) + K34Z * z, y];
+};
+/** A finger: the bend goes towards the palm (z); in the frame a segment is shorter by the cos of the accumulated angle, a segment beyond
+ *  90° goes back towards the wrist on the palm side. vis — how many segments are seen from the back (a finger bent further hides under
+ *  itself); back — the finger is folded. */
+function finger(i: number, c: Curl, spread: number, pr: Proj): Chain & {vis: number; back: boolean} {
+  const phi = FAN[i] + spread * (1.5 - i);
+  const a1 = c[0], a2 = a1 + c[1], a3 = a2 + c[2];
+  const cs = [Math.max(Math.cos(a1), 0.14), Math.cos(a2), Math.cos(a3)];
+  const sn = [Math.sin(a1), Math.sin(a2), Math.sin(a3)];
+  let [x, y] = MCP[i];
+  let z = 0;
+  const pts: P[] = [pr(x, y, z)];
+  for (let k = 0; k < 3; k++) {
+    x += Math.sin(phi) * SEG[i][k] * cs[k];
+    y += Math.cos(phi) * SEG[i][k] * cs[k];
+    z += SEG[i][k] * sn[k];
+    pts.push(pr(x, y, z));
+  }
+  const vis = cs[1] <= 0.02 ? 1 : cs[2] <= 0.02 ? 2 : 3;
+  return {pts, ws: widths(i), vis, back: cs[1] < 0.25};
+}
+/** The thumb: from the mound at the wrist out and up, slightly in front of the palm; opp — it goes across the palm and the fingers. */
+function thumb(t: HandPose['th'], pr: Proj): Chain {
+  const a0 = (0.55 + 0.45 * t.abd) * (1 - t.opp) - 0.35 * t.opp;
+  const a1 = a0 - 0.3 * (1 - t.opp) - 0.5 * t.flex;
+  const a2 = a1 - 0.15 - 0.7 * t.flex;
+  const b: P = [10.8 - 5 * t.opp, 8.5];
+  const p1 = step(b, a0, THL[0]);
+  const p2 = step(p1, a1, THL[1]);
+  const p3 = step(p2, a2, THL[2]);
+  const zs = [2, 5 + 3 * t.opp, 7 + 4 * t.opp, 7 + 5 * t.opp];
+  return {pts: [b, p1, p2, p3].map((q, k) => pr(q[0], q[1], zs[k])), ws: THW};
+}
+/** The palm in the frame of a view: in three quarters narrower towards the knuckles, with a band of its thickness on the palm side. */
+function palmOf(view: HandView, pr: Proj): string {
+  if (view === 'dorsal' || view === 'palmar') return palmD(35);
+  const q = (x: number, y: number, z = 0) => fp(pr(x, y, z));
+  const sg = view === 'ulnar' ? -1 : 1;
+  // the right edge (+x of the frame) is the near one: from the thumb side the thickness of the palm shows (z); from the little finger
+  // side — the edge of the palm
+  const zr = sg > 0 ? 5 : 3;
+  const zl = sg > 0 ? 0 : 2;
+  const [xl, xr] = sg > 0 ? [-1, 1] : [1, -1];
+  return `M -11 -2 C ${q(xl * 12.6, 9, zl)} ${q(xl * 14, 21, zl)} ${q(xl * 13.7, 33, zl)} C ${q(xl * 13.5, 36, zl)} ${q(xl * 11, 37.5, zl)} ${q(xl * 8, 37, zl)} L ${q(xr * 9, 37.5, zr)} C ${q(xr * 12, 37.5, zr)} ${q(xr * 13.6, 36, zr)} ${q(xr * 13.6, 33, zr)} C ${q(xr * 13.8, 21, zr)} ${q(xr * 12.8, 9, zr * 0.5)} 11.6 -2 Z`;
+}
+
+/** What to draw: a whole finger, no thumb, only the thumb and so on (the layers of the grips). */
+type RigPick = {palm?: boolean; fingers?: number[]; thumb?: boolean; from?: number; thumbFrom?: number; noCrease?: boolean};
+const ALL: RigPick = {palm: true, fingers: [0, 1, 2, 3], thumb: true};
+
+/** A hand layer by a pose and a view. pick — which parts are in the layer (grips split a hand into the layers behind the prop and in front
+ *  of it); pick.from, pick.thumbFrom — the fingers and the thumb of the layer are drawn from that segment (the near phalanx stayed in the
+ *  layer behind the prop). */
+function rigHand(pose: HandPose, view: HandView, pick: RigPick = ALL): RigLay {
+  const sil: string[] = [];
+  const ops: RigOp[] = [];
+  const lines: {d: string; k?: number}[] = [];
+  const from = pick.from ?? 0;
+  const part = (d: string) => {
+    sil.push(d);
+    ops.push({d, kind: 'part'});
+  };
+  const pr = projOf(view);
+  const palm = palmOf(view, pr);
+  const th = thumb(pose.th, pr);
+  const thD = chainD(th.pts, th.ws, pick.thumbFrom ?? 0);
+  // the order of the fingers — from the far to the near one: from the little finger side the near one is the little finger, otherwise the
+  // index finger
+  const order = (view === 'ulnar' ? [0, 1, 2, 3] : [3, 2, 1, 0]).filter((i) => (pick.fingers ?? []).includes(i));
+  const fs = order.map((i) => ({i, ...finger(i, pose.f[i], pose.spread, pr)}));
+  if (view !== 'palmar') {
+    // from the back (and in three quarters): the fingers go under the palm at the bases (the web), a finger bent beyond 90° — behind
+    // itself; the thumb: from the back and from the little finger side — behind the palm (its edge shows), from the thumb side — on top
+    if (pick.thumb && view !== 'radial') part(thD);
+    for (const f of fs) part(chainD(f.pts, f.ws, from, Math.max(from + 1, f.vis)));
+    if (pick.palm) {
+      sil.push(palm);
+      ops.push({d: palm, kind: 'fill'});
+      // bent fingers: knuckle arcs at the bases (only from the back: in three quarters they fall onto the fingers as strokes)
+      for (const f of view === 'dorsal' ? fs : []) {
+        const bend = cl01((pose.f[f.i][0] - 0.75) / 0.4);
+        if (bend > 0.05) {
+          const [x, y] = f.pts[0];
+          lines.push({d: `M ${f2(x - 2.4)} ${f2(y + 0.4)} Q ${f2(x)} ${f2(y - 1.8 * bend - 0.4)} ${f2(x + 2.4)} ${f2(y + 0.4)}`, k: 0.42 * bend});
+        }
+      }
+    }
+    if (pick.thumb && view === 'radial') {
+      part(thD);
+      if (pick.palm) ops.push({d: circleD([th.pts[0][0] - 0.6, th.pts[0][1] - 1.6], THW[0] + 1.5), kind: 'fill'});
+    }
+    return {sil, ops, lines, wrist: !!pick.palm};
+  }
+  // with the palm to the viewer: a bent finger lies on the palm — its far phalanges on top; the finger bases are covered by skin patches
+  // (after all the fingers at once — no scraps of the thin outline between them)
+  if (pick.palm) {
+    sil.push(palm);
+    ops.push({d: palm, kind: 'fill'});
+    // the crease at the thumb; a palm pressed to a surface (flat) has none: behind the edge of a prop only one arc of the hand remained
+    if (pose.th.opp <= 0.5 && !pick.noCrease) lines.push({d: 'M 10.2 7 C 4.6 13 3.6 21 5.6 29', k: 0.32});
+  }
+  for (const f of fs) part(chainD(f.pts, f.ws, from, f.back && from === 0 ? 1 : 3));
+  if (pick.palm && from === 0) for (const f of fs) ops.push({d: circleD([f.pts[0][0], f.pts[0][1] - 1.6], f.ws[0] + 2), kind: 'fill'});
+  for (const f of fs) if (f.back && from === 0) part(chainD(f.pts, f.ws, 1, 3));
+  if (pick.thumb) {
+    part(thD);
+    if (pick.palm) ops.push({d: circleD([th.pts[0][0] - 1.2, th.pts[0][1] - 1.4], THW[0] + 1.6), kind: 'fill'});
+  }
+  return {sil, ops, lines, wrist: !!pick.palm};
+}
+
+// ---------- drawn shapes: the side view ----------
+/** A hand from the side (radial — from the thumb side, ulnar — from the little finger side): body — the palm outline from the wrist around
+ *  the knuckles back to the wrist (12 points, a smooth curve), fins — index … little finger, thumb — the thumb; gap — from which share of
+ *  a finger the line between neighbours starts, t0 and t1 — where the outline of the thumb starts on the inner and the outer edge. All the
+ *  shapes are made of the same parts: a transition between them blends the support points (mixSide). */
+type SideArt = {body: P[]; fins: Fin[]; thumb: Fin; gap: number; t0: number; t1: number};
+// hangs: a "mitten" — the fingers together, slightly bent towards the palm in one arc, the tips stepped (the little finger shorter and
+// bent more); the thumb lies along the palm, its tip at the base of the index finger
+const SIDE_RELAXED: SideArt = {
+  body: [[-10.6, -2], [-12.2, 10], [-13.4, 22], [-13, 31], [-10.6, 36.6], [-4, 38.6], [3, 38.2], [9.2, 35.6], [12.6, 29], [13.8, 19], [13.2, 9], [11.6, -2]],
+  fins: [
+    {B: [-7, 33], C: [-7.6, 47], T: [-4.6, 58], wb: 4.0, wt: 3.3},
+    {B: [-4.4, 34], C: [-4.2, 49.6], T: [-0.2, 60.6], wb: 4.0, wt: 3.3},
+    {B: [-1.6, 34], C: [-0.6, 48.4], T: [4, 57.8], wb: 3.8, wt: 3.2},
+    {B: [1.2, 33], C: [2.8, 44.4], T: [7.4, 52.4], wb: 3.5, wt: 3.0},
+  ],
+  thumb: {B: [7.4, 9], C: [13, 22], T: [6.6, 40.6], wb: 5.4, wt: 4.2},
+  gap: 0.5, t0: 0.34, t1: 0.95,
+};
+// a fist: four bent fingers are one band across the hand on the palm side (the tips stick out slightly as bumps), the thumb lies on top at
+// the wrist; the back of the hand continues the forearm line. A prop (a torch, a pen, a handle) passes under the band
+const SIDE_FIST: SideArt = {
+  body: [[-10.6, -2], [-12.4, 8], [-14.4, 18], [-14.8, 29], [-13.6, 38.4], [-8.6, 44.2], [-1, 45.6], [6.5, 44.8], [12.8, 41.6], [15.4, 30], [14.2, 15], [11.6, -2]],
+  fins: [
+    {B: [-3, 40.2], C: [6, 41], T: [13.4, 39.8], wb: 3.5, wt: 3.2},
+    {B: [-3, 33.3], C: [7, 33.9], T: [15, 33], wb: 3.8, wt: 3.4},
+    {B: [-3, 26.2], C: [7.6, 26.6], T: [15.6, 26], wb: 3.9, wt: 3.5},
+    {B: [-3, 19], C: [7.4, 19.2], T: [14.8, 19], wb: 3.8, wt: 3.4},
+  ],
+  thumb: {B: [3.4, 7.6], C: [10.4, 9.4], T: [16, 14.2], wb: 4.9, wt: 3.7},
+  gap: 0.3, t0: 0.22, t1: 0.22,
+};
+// an open hand from the side: the fingers straight, together, in line with the arm, the tips stepped; the thumb apart on the palm side
+const SIDE_OPEN: SideArt = {
+  body: [[-10.6, -2], [-11.4, 10], [-10.2, 21], [-8.6, 29], [-7.2, 33.4], [-3, 35.4], [2, 35.4], [6.4, 33.6], [8.2, 29], [10.2, 20], [11.8, 10], [11.6, -2]],
+  fins: [
+    {B: [-3.6, 31], C: [-3.8, 47], T: [-3.8, 61.6], wb: 4.0, wt: 3.2},
+    {B: [-1.2, 32], C: [-1.2, 48], T: [-1.2, 64.4], wb: 3.9, wt: 3.2},
+    {B: [1.2, 32], C: [1.4, 46], T: [1.6, 60.4], wb: 3.8, wt: 3.1},
+    {B: [3.4, 31], C: [3.8, 44], T: [4.2, 54.6], wb: 3.6, wt: 3.0},
+  ],
+  thumb: {B: [9, 12], C: [15.6, 21], T: [16.6, 32.4], wb: 4.8, wt: 3.4},
+  gap: 0.55, t0: 0.2, t1: 0.95,
+};
+/** Shapes with a side drawing: a hand on a rail is seen from the side only on the way of a gesture — as a hanging one, a palm on a door
+ *  leaf — as an open one. */
+const SIDE: Partial<Record<HandShape, SideArt>> = {relaxed: SIDE_RELAXED, rail: SIDE_RELAXED, fist: SIDE_FIST, open: SIDE_OPEN, flat: SIDE_OPEN};
+const mixN = (a: number, b: number, k: number) => a + (b - a) * k;
+const mixP = (a: P, b: P, k: number): P => [mixN(a[0], b[0], k), mixN(a[1], b[1], k)];
+const mixFin = (a: Fin, b: Fin, k: number): Fin => ({B: mixP(a.B, b.B, k), C: mixP(a.C, b.C, k), T: mixP(a.T, b.T, k), wb: mixN(a.wb, b.wb, k), wt: mixN(a.wt, b.wt, k)});
+/** A transition between the drawn side shapes: the support points of the palm and the fingers go from one shape to the other — the
+ *  fingers bend. */
+const mixSide = (a: SideArt, b: SideArt, k: number): SideArt => ({
+  body: a.body.map((p, i) => mixP(p, b.body[i], k)),
+  fins: a.fins.map((f, i) => mixFin(f, b.fins[i], k)),
+  thumb: mixFin(a.thumb, b.thumb, k),
+  gap: mixN(a.gap, b.gap, k), t0: mixN(a.t0, b.t0, k), t1: mixN(a.t1, b.t1, k),
+});
+/** A hand layer from the side: the silhouette — the palm, four fingers and the thumb as one shape; the lines — the edge of the near finger
+ *  over the far one (from the thumb side the near one is the index finger, from the little finger side — the little finger); the thumb is
+ *  seen in front only from its own side (radial) — from the little finger side it is behind the palm, its edge is in the silhouette. */
+function sideLay(a: SideArt, view: HandView): HandLay {
+  const gs = a.fins.map((f) => finGeo(f));
+  const tg = finGeo(a.thumb);
+  const near = view === 'radial' ? [0, 1, 2] : [3, 2, 1];
+  // a hanging hand has the little finger separated by a step of the silhouette — two lines between the fingers; the band of a fist is
+  // split by three (the third line appears on the way to the fist — without a jump)
+  const k3 = 0.5 * cl01((0.5 - a.gap) / 0.15);
+  const lines = near.map((i, n) => ({d: finEdge(gs[i], view === 'radial' ? 'R' : 'L', a.gap, 1), k: n < 2 ? 0.5 : k3})).filter((l) => l.k > 0.02);
+  return {sil: [smooth(a.body) + ' Z', ...gs.map((g) => g.out), tg.out], lines, over: view === 'radial' ? [thumbOver(a.thumb, a.t0, a.t1, 'L')] : []};
+}
+/** The drawn side shape for a shape (and a transition from another one) — or null: such a hand is drawn by the skeleton. */
+function sideArt(shape: HandShape, from?: HandMix): SideArt | null {
+  const to = SIDE[shape];
+  if (!to) return null;
+  if (!from || from.k >= 1 || from.shape === shape) return to;
+  const a = SIDE[from.shape];
+  return a ? mixSide(a, to, cl01(from.k)) : null;
+}
+
+// ---------- drawn shapes: grips with the back to the viewer ----------
+/** A hand with its back to the viewer and a prop: the palm palmD(yk), fins — the fingers from the little finger to the index finger (the
+ *  lines between them — from share gap), thumb — the thumb, index — the index finger as a separate shape over the prop (a pen). */
+type FaceArt = {yk: number; fins: Fin[]; gap: number; thumb: Fin; index?: Fin};
+const FACE: Partial<Record<HandShape, FaceArt>> = {
+  // writes: the pen between the thumb and the index finger — the tip comes out from under the bent index finger, the tail rises above the
+  // dip between the thumb and the index finger; the middle, ring and little finger are tucked
+  pen: {
+    yk: 32, gap: 0.25,
+    fins: [
+      {B: [-10.2, 29.6], C: [-10.8, 36.6], T: [-9.8, 41.6], wb: 3.4, wt: 3.2},
+      {B: [-3.8, 32], C: [-4.2, 40.6], T: [-3.4, 46], wb: 3.8, wt: 3.5},
+      {B: [2.9, 33], C: [3.2, 43], T: [3.4, 50], wb: 4.0, wt: 3.5},
+    ],
+    index: {B: [9.4, 31], C: [12.6, 44], T: [9.2, 50.6], wb: 4.0, wt: 3.3},
+    thumb: {B: [12, 9], C: [19.6, 22], T: [15, 36.6], wb: 5.0, wt: 3.5},
+  },
+  // a phone at the ear: the fingers bent onto the back cover of the phone — they lie across it in an arc, the tips towards the face (−x);
+  // the thumb along the near edge of the phone. The phone is drawn before the hand
+  ear: {
+    yk: 34, gap: 0.36,
+    fins: [
+      {B: [-10.2, 32.6], C: [-12.8, 41.6], T: [-18.6, 45.6], wb: 3.4, wt: 3.0},
+      {B: [-3.8, 35.2], C: [-6.4, 48.4], T: [-13.8, 54.4], wb: 3.7, wt: 3.2},
+      {B: [2.9, 36], C: [1.4, 51.6], T: [-7, 60], wb: 3.9, wt: 3.3},
+      {B: [9.6, 34.5], C: [9.6, 50.4], T: [2, 60.4], wb: 3.8, wt: 3.2},
+    ],
+    thumb: {B: [11, 10], C: [16.6, 19], T: [16.4, 31], wb: 4.9, wt: 3.6},
+  },
+  // a folder or a phone in the hand: the back of the hand at the near edge, four fingers lie on the cover — separate (the lines between them
+  // start almost at the knuckles), straight, without a sideways bend, bent over the edge (shorter than open ones); the thumb behind the
+  // prop. No creases at the joints: in a medium shot they read as scratches
+  phone: {
+    yk: 32, gap: 0.2,
+    fins: [
+      {B: [-10.2, 30.6], C: [-10.6, 39], T: [-10.9, 46.4], wb: 3.5, wt: 3.1},
+      {B: [-3.8, 32.6], C: [-4, 42.6], T: [-4.1, 51.4], wb: 3.8, wt: 3.3},
+      {B: [2.9, 33.4], C: [3, 44], T: [3.1, 53.4], wb: 4.0, wt: 3.4},
+      {B: [9.6, 32], C: [10, 42], T: [10.3, 50.4], wb: 3.9, wt: 3.3},
+    ],
+    thumb: {B: [11, 9], C: [17.4, 17], T: [17, 30], wb: 4.9, wt: 3.4},
+  },
+};
+// a phone lying on the palm screen up (tap): the palm under the phone is wider than it on the finger side — along the side edge (−x) a band
+// of the hand shows, from it three fingers curl over the edge onto the screen
+const TAP_PALM = 'M -11 -2 C -12.8 5 -19.4 8.8 -22.4 14.4 C -23.8 19 -24 30 -23.4 34.4 C -22.6 38 -19.4 38.4 -16.4 36.4 L 12.2 30 C 12.8 18 12.6 8 11.6 -2 Z';
+const TAP_TIPS: Fin[] = [17.2, 23.6, 30].map((y, i) => ({B: [-22, y], C: [-21.4, y + 1.6], T: [-15 + i * 0.3, y + 2.2], wb: 3.3, wt: 2.9}));
+const tapThumb = (q: number): Fin => ({B: [10.6, 5.6], C: [18.6 + 0.8 * q, 15 - 3.4 * q], T: [5 + 5.4 * q, 24.6 - 5.6 * q], wb: 5.2, wt: 3.7 + 0.5 * q});
+
 // ---------- hands ----------
-// Finger bases (knuckles) for the back-of-hand view, the right hand, the thumb at +x.
-const MCP = {I: [9.6, 34.5] as P, M: [2.9, 36] as P, R: [-3.8, 35.2] as P, P: [-10.2, 32.6] as P};
+/** The palm of the dorsal and palmar views: from the wrist (half-width ≈ 11) to the knuckles (width ≈ 28). yk — the knuckle level. */
+function palmD(yk = 34) {
+  return `M -11 -2 C -12.4 9 -14.2 ${f2(yk * 0.6)} -13.8 ${f2(yk - 2)} C -13.6 ${f2(yk + 1)} -11 ${f2(yk + 2.5)} -8 ${f2(yk + 2)} L 9 ${f2(yk + 2.5)} C 12 ${f2(yk + 2.5)} 13.6 ${f2(yk + 1)} 13.6 ${f2(yk - 2)} C 13.8 ${f2(yk * 0.6)} 12.8 9 11.6 -2 Z`;
+}
 
-/** Palm of the dorsal/palmar view: from the wrist (half-width ≈ 11) to the knuckles (width ≈ 28). yk — the knuckle level. */
-const palmD = (yk = 34) =>
-  `M -11 -2 C -12.4 9 -14.2 ${f2(yk * 0.6)} -13.8 ${f2(yk - 2)} C -13.6 ${f2(yk + 1)} -11 ${f2(yk + 2.5)} -8 ${f2(yk + 2)} L 9 ${f2(yk + 2.5)} C 12 ${f2(yk + 2.5)} 13.6 ${f2(yk + 1)} 13.6 ${f2(yk - 2)} C 13.8 ${f2(yk * 0.6)} 12.8 9 11.6 -2 Z`;
-/** Palm of the side view (radial/ulnar): the back of the hand — −x, the palm — +x. */
-const palmS = `M -10.6 -2 C -11.8 9 -13.4 20 -13.4 29 C -13.4 35 -11 38 -6 38.5 L 8 38 C 12.6 37 14.6 33 14.8 27 C 15 18 13.4 8 11.6 -2 Z`;
-
-/** q — the progress of a live shape: count — how many fingers are unfolded (fractional — a finger on its way), rail — tapping phase
- *  (cycle — 1), tap — thumb lift over the screen (0 — touching). */
-export function handParts(shape: HandShape, view: HandView, st: HandStyle, q = 0): {back?: React.ReactNode; front: React.ReactNode} {
-  const side = view === 'radial' || view === 'ulnar';
+/** The hand of a shape in a view. q — the progress of a live shape: count — how many fingers are unbent (a fraction — a finger on its way),
+ *  rail — the tapping phase (a cycle is 1), tap — the thumb lift over the screen (0 — it touches). from — a transition from another
+ *  shape: share k of the way from from.shape to shape (the joint angles blend — the fingers bend instead of being swapped). */
+export function handParts(shape: HandShape, view: HandView, st: HandStyle, q = 0, from?: HandMix): {back?: React.ReactNode; front: React.ReactNode} {
   const D = (l: HandLay) => handLayer(l, st);
-  const cl = (v: number) => Math.max(0, Math.min(1, v));
-  const lerpP = (a: P, b: P, k: number): P => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
-  switch (shape) {
-    case 'count': {
-      // counts on fingers, palm towards the viewer at the chest (not the back: one finger over a fist with the back out reads as "the
-      // middle finger"): the index, middle, ring and little finger unfold one by one from a fist (q — how many are unfolded), slightly
-      // fanned; the bent ones are short rolls on the palm, the thumb lies across them
-      const base: P[] = [MCP.I, MCP.M, MCP.R, MCP.P];
-      const len = [24, 27, 25, 19];
-      const fs: Fin[] = base.map((B, i) => {
-        const e = cl(q - i);
-        const e2 = e * e * (3 - 2 * e);
-        return {B, C: lerpP([B[0], B[1] + 6], [B[0] * 1.15, B[1] + 12], e2), T: lerpP([B[0] * 0.9, B[1] - 6], [B[0] * 1.35, B[1] + len[i]], e2), wb: [3.9, 4.0, 3.8, 3.4][i], wt: [3.2, 3.3, 3.1, 2.8][i]};
-      });
-      const thumb: Fin = {B: [11.5, 10], C: [9.4, 24], T: [-1.5, 27.4], wb: 5.2, wt: 3.8};
-      const crease = {d: 'M 10.2 7 C 4.6 13 3.6 21 5.6 29', k: 0.32};
-      const order = [3, 2, 1, 0];
-      return {front: D({sil: [palmD(34), ...fs.map((f) => finGeo(f).out)], lines: [crease], over: [...order.map((i) => thumbOver(fs[i], 0, 0)), thumbOver(thumb, 0.2, 0.35, 'L')]})};
-    }
-    case 'rail': {
-      // the hand lies on a rail (view from above and behind, back of the hand): the knuckles on the bar, the fingers hang over it and are
-      // shorter in the frame; they tap in turn from the little finger to the index (q — phase, cycle — 1): a finger lifts and comes down
-      const base: P[] = [MCP.P, MCP.R, MCP.M, MCP.I];
-      const tap = (i: number) => {
-        const x = (((q % 1) + 1) % 1) * 4 - i;
-        return x > 0 && x < 1 ? Math.sin(Math.PI * x) : 0;
-      };
-      const fs: Fin[] = base.map((B, i) => {
-        const a = tap(i);
-        return {B, C: lerpP([B[0], B[1] + 8], [B[0] * 1.02, B[1] + 11], a), T: lerpP([B[0] * 1.02, B[1] + 13.5], [B[0] * 1.08, B[1] + 22], a), wb: [3.4, 3.8, 4.0, 3.9][i], wt: [2.9, 3.2, 3.4, 3.3][i]};
-      });
-      const fg = fingers(fs, 0.2, 'R');
-      const thumb = finGeo({B: [10.4, 9], C: [16.4, 18], T: [17.4, 29], wb: 5.0, wt: 3.4});
-      const knuckles = base.map((B) => ({d: `M ${f2(B[0] - 2.4)} ${f2(B[1] - 2.2)} Q ${f2(B[0])} ${f2(B[1] - 4.6)} ${f2(B[0] + 2.4)} ${f2(B[1] - 2.2)}`, k: 0.42}));
-      return {front: D({sil: [thumb.out, palmD(), ...fg.sil], lines: [...fg.lines, ...knuckles]})};
-    }
-    case 'tap': {
-      // the phone lies on the palm screen up (seen from above, squeezed by the view; the caller draws it between back and front, centre —
-      // HAND_GRIP.tap.c, 36 × 24 frame units): the palm is under it, its heel shows at the near edge; the tips of three fingers curl over
-      // the side edge (−x) onto the screen; the thumb goes from the mound at the wrist over the other edge above the screen and taps: q = 0
-      // — touching, 1 — lifted
-      const palm = 'M -11 -2 C -12.6 8 -15.2 18 -16.4 30 L 12.2 30 C 12.8 18 12.6 8 11.6 -2 Z';
-      const tips: Fin[] = [17.4, 23.4, 29.2].map((y, i) => ({B: [-24.2 + i * 0.4, y], C: [-23.6, y + 2.2], T: [-16.6 + i * 0.3, y + 2.8], wb: 3.4, wt: 2.9}));
-      const th: Fin = {B: [10.6, 5.6], C: lerpP([18.6, 15], [19.4, 11.6], q), T: lerpP([5, 24.6], [10.4, 19], q), wb: 5.2, wt: 3.7 + 0.5 * q};
-      return {
-        back: D({sil: [palm]}),
-        front: D({sil: [], over: [...tips.map((f) => thumbOver(f, 0, 0)), thumbOver(th, 0.25, 0.25, 'L')]}),
-      };
-    }
-    case 'relaxed': {
-      if (side) {
-        // hangs: view from the thumb side (radial, front) or the little finger side (ulnar, from behind). Fingers slightly bent to the
-        // palm, the tips of three or four fingers show in steps; the thumb in front — a separate shape along the index finger
-        const fs: Fin[] = [
-          {B: [-4.6, 33], C: [-1.4, 46.6], T: [12.6, 51.2], wb: 3.6, wt: 2.8},
-          {B: [-5.8, 34], C: [-3.8, 51], T: [9.6, 57.4], wb: 3.9, wt: 3.0},
-          {B: [-7, 34], C: [-6.8, 54.6], T: [4.6, 61.4], wb: 4.1, wt: 3.2},
-          {B: [-8.2, 33], C: [-9.8, 56], T: [-1.8, 63.6], wb: 4.3, wt: 3.4},
-        ];
-        const order = view === 'radial' ? fs : fs.slice().reverse();
-        const fg = fingers(order, 0.5, view === 'radial' ? 'R' : 'L');
-        const tf: Fin = {B: [9.4, 11], C: [11, 27.4], T: [3.8, 44.4], wb: 5.8, wt: 4.4};
-        const thumb = view === 'radial' ? [thumbOver(tf, 0.3, 0.62, 'L')] : [];
-        return {front: D({sil: [palmS, ...fg.sil, ...(view === 'radial' ? [finGeo(tf).out] : [])], lines: fg.lines, over: thumb})};
+  const side = view === 'radial' || view === 'ulnar';
+  if (side) {
+    // from the side: a hanging hand, a fist, an open hand and the transitions between them — drawn shapes (one silhouette, fingers together)
+    const art = sideArt(shape, from);
+    if (art) return {front: D(sideLay(art, view))};
+  } else if (!from || from.k >= 1 || from.shape === shape) {
+    const a = FACE[shape];
+    if (a) {
+      const fg = fingers(a.fins, a.gap, 'R');
+      const tg = finGeo(a.thumb);
+      if (shape === 'pen') {
+        // the pen is drawn by the body between the layers: the index finger and the thumb are over it (front), their bases with the
+        // common outline — under it
+        const index = finGeo(a.index!);
+        return {
+          back: D({sil: [palmD(a.yk), ...fg.sil, index.out, tg.out], lines: fg.lines}),
+          front: D({sil: [], over: [{fill: index.out, edge: smooth([...index.L.slice(2), ...index.cap, ...index.R.slice().reverse().slice(0, 8)])}, thumbOver(a.thumb, 0.35, 0.35, 'L')]}),
+        };
       }
-      // back of the hand up (palm on the knees): fingers together, slightly bent (shorter), the thumb at the side
-      const fs: Fin[] = [
-        {B: MCP.P, C: [-10.8, 40], T: [-11.2, 46.8], wb: 3.4, wt: 2.8},
-        {B: MCP.R, C: [-4.1, 44], T: [-4.5, 52.6], wb: 3.8, wt: 3.1},
-        {B: MCP.M, C: [3.1, 46], T: [2.9, 55.6], wb: 4.0, wt: 3.3},
-        {B: MCP.I, C: [10, 43], T: [9.8, 51.6], wb: 3.9, wt: 3.2},
-      ];
-      const fg = fingers(fs, 0.35, 'R');
-      const thumb = finGeo({B: [10.4, 9], C: [17, 17], T: [18.4, 30], wb: 5.0, wt: 3.4});
-      return {front: D({sil: [thumb.out, palmD(), ...fg.sil], lines: fg.lines})};
-    }
-    case 'fist': {
-      if (side) {
-        // a fist on a stick (torch, keys), front view (radial) or from behind (ulnar): the back of the hand — −x, the bent fingers
-        // step across the stick on the palm side (+x), the thumb on top over the index finger
-        const fs: Fin[] = [
-          {B: [-3, 40.2], C: [6, 41.2], T: [13.6, 39.6], wb: 3.4, wt: 3.1},
-          {B: [-3, 33.4], C: [7, 34], T: [15.8, 33], wb: 3.7, wt: 3.4},
-          {B: [-3, 26.2], C: [7.6, 26.6], T: [16.6, 25.8], wb: 3.9, wt: 3.5},
-          {B: [-3, 18.8], C: [7.4, 18.8], T: [16, 18.6], wb: 3.9, wt: 3.5},
-        ];
-        const fg = fingers(fs, 0.3, 'L');
-        const body = `M -10.6 -2 C -12 8 -14.8 17 -14.8 27 C -14.8 37 -12.4 43 -6 44.4 C -2 45 2 44.6 4 43.4 L 6 14 C 9 9 11 4 11.6 -2 Z`;
-        const thumb = view === 'radial' ? [thumbOver({B: [2, 9.4], C: [9, 10.6], T: [15.6, 14.4], wb: 4.6, wt: 3.4}, 0.25, 0.25, 'L')] : [];
-        return {front: D({sil: [body, ...fg.sil], lines: fg.lines, over: thumb})};
-      }
-      // a fist with the back out: a row of knuckles, fingers curled under the bar, the thumb at the index finger
-      const fs: Fin[] = [
-        {B: [-10.2, 31.4], C: [-10.6, 38], T: [-10.2, 42.6], wb: 3.5, wt: 3.4},
-        {B: [-3.8, 33.6], C: [-4, 41], T: [-3.8, 46], wb: 3.9, wt: 3.8},
-        {B: [2.9, 34.4], C: [3, 42], T: [2.9, 47.2], wb: 4.0, wt: 3.9},
-        {B: [9.6, 33], C: [9.9, 40], T: [9.6, 45], wb: 3.9, wt: 3.8},
-      ];
-      const fg = fingers(fs, 0.15, 'R');
-      const thumb = finGeo({B: [11, 12], C: [17, 23], T: [14, 37], wb: 4.8, wt: 3.6});
-      const knuckles = [-10.2, -3.8, 2.9, 9.6].map((x) => ({d: `M ${f2(x - 2.4)} ${f2(33.6)} Q ${f2(x)} ${f2(31.4)} ${f2(x + 2.4)} ${f2(33.6)}`, k: 0.45}));
-      return {front: D({sil: [thumb.out, palmD(33), ...fg.sil], lines: [...fg.lines, ...knuckles]})};
-    }
-    case 'hook': {
-      // a bag handle in the bent fingers of a lowered hand: fingers hooked to the palm, tips in steps, the thumb
-      // along the index finger
-      const fs: Fin[] = [
-        {B: [-4.6, 33], C: [-4, 50], T: [8.4, 43.6], wb: 3.6, wt: 2.9},
-        {B: [-5.8, 34], C: [-6, 54.6], T: [6.4, 49], wb: 3.9, wt: 3.1},
-        {B: [-7, 34], C: [-8, 58.4], T: [4, 53.4], wb: 4.1, wt: 3.3},
-        {B: [-8.2, 33], C: [-10, 61], T: [1.2, 57], wb: 4.3, wt: 3.4},
-      ];
-      const order = view === 'ulnar' ? fs.slice().reverse() : fs;
-      const fg = fingers(order, 0.5, view === 'ulnar' ? 'L' : 'R');
-      const tf: Fin = {B: [9.4, 11], C: [10.4, 25.4], T: [2.6, 39.6], wb: 5.7, wt: 4.3};
-      const thumb = view !== 'ulnar' ? [thumbOver(tf, 0.3, 0.62, 'L')] : [];
-      return {front: D({sil: [palmS, ...fg.sil, ...(view !== 'ulnar' ? [finGeo(tf).out] : [])], lines: fg.lines, over: thumb})};
-    }
-    case 'open':
-    case 'flat': {
-      if (side && shape === 'open') {
-        // an open hand from the side (the "over there" gesture with a straight arm): fingers together in line with the arm — tips in steps,
-        // the thumb apart on the palm side (+x)
-        const fs: Fin[] = [
-          {B: [3.4, 31], C: [3.8, 44], T: [4.2, 54.6], wb: 3.6, wt: 3.0},
-          {B: [1.2, 32], C: [1.4, 46], T: [1.6, 60.4], wb: 3.8, wt: 3.1},
-          {B: [-1.2, 32], C: [-1.2, 48], T: [-1.2, 64.4], wb: 3.9, wt: 3.2},
-          {B: [-3.6, 31], C: [-3.8, 47], T: [-3.8, 61.6], wb: 4.0, wt: 3.2},
-        ];
-        const fg = fingers(fs, 0.55, 'L');
-        const palm = `M -10.6 -2 C -11.6 10 -8.6 22 -7.6 33 L 7.4 33 C 9.6 24 12.6 12 11.6 -2 Z`;
-        const thumb = finGeo({B: [9, 12], C: [15.6, 21], T: [16.6, 32.4], wb: 4.8, wt: 3.4});
-        return {front: D({sil: [thumb.out, palm, ...fg.sil], lines: fg.lines})};
-      }
-      // an open hand: fingers together, straight, slightly fanned; the thumb apart. open — the "over there" gesture (palm to the target),
-      // flat — the palm pressed to a surface (frame, folder)
-      const fs: Fin[] = [
-        {B: MCP.P, C: [-11, 42], T: [-12, 51.4], wb: 3.4, wt: 2.8},
-        {B: MCP.R, C: [-4.3, 47], T: [-4.9, 59.2], wb: 3.8, wt: 3.1},
-        {B: MCP.M, C: [3, 49], T: [3.1, 62.6], wb: 4.0, wt: 3.3},
-        {B: MCP.I, C: [10.2, 46], T: [10.6, 58.2], wb: 3.9, wt: 3.2},
-      ];
-      const fg = fingers(fs, 0.5, 'R');
-      const thumb = finGeo(shape === 'open' ? {B: [10.6, 9], C: [19, 15], T: [23.4, 27.6], wb: 5.2, wt: 3.5} : {B: [10.6, 9], C: [18, 16], T: [21.4, 29], wb: 5.2, wt: 3.5});
-      // the palm pressed to a wall, the back of the hand towards the viewer (flat, dorsal). Knuckle arcs across the hand read as a seam or
-      // "odd strokes at the wrist" in a close shot: the back of the hand is shown by the thumb at the side and the place of the hand
-      const back: {d: string; k?: number}[] = [];
-      return {front: D({sil: [thumb.out, palmD(), ...fg.sil], lines: [...fg.lines, ...back]})};
-    }
-    case 'point': {
-      // points with a finger, side view (radial): the index straight, three fingers tucked in steps, the thumb on the middle finger
-      const fs: Fin[] = [
-        {B: [-3, 38.6], C: [5, 40], T: [12.4, 37.4], wb: 3.4, wt: 3.0},
-        {B: [-3, 32.6], C: [6, 33.6], T: [14.2, 31.4], wb: 3.6, wt: 3.2},
-        {B: [-3, 26.4], C: [6.4, 27], T: [14.8, 25.4], wb: 3.8, wt: 3.3},
-      ];
-      const fg = fingers(fs, 0.3, 'L');
-      const index = finGeo({B: [-6.6, 30], C: [-6.8, 50], T: [-6.4, 68], wb: 4.1, wt: 3.2});
-      const body = `M -10.6 -2 C -12 8 -13.4 18 -13.2 28 C -13 36 -10.4 42 -5 43 C 0 43.6 3 42.6 4.6 40.8 L 6 14 C 9 9 11 4 11.6 -2 Z`;
-      const thumb = thumbOver({B: [6, 9], C: [12, 15], T: [11.4, 24.4], wb: 4.6, wt: 3.3}, 0.25, 0.6, 'L');
-      return {front: D({sil: [body, index.out, ...fg.sil], lines: [...fg.lines, {d: finEdge(index, 'L', 0.55, 0)}], over: [thumb]})};
-    }
-    case 'pen': {
-      // writes: the pen between the thumb and the index finger — the tip comes out from under the bent index finger, the tail is above
-      // the dip between the thumb and the index finger; the middle, ring and little fingers are tucked (back). The caller draws the
-      // pen between the layers
-      const fs: Fin[] = [
-        {B: [-10.2, 29.6], C: [-10.8, 36.6], T: [-9.8, 41.6], wb: 3.4, wt: 3.2},
-        {B: [-3.8, 32], C: [-4.2, 40.6], T: [-3.4, 46], wb: 3.8, wt: 3.5},
-        {B: [2.9, 33], C: [3.2, 43], T: [3.4, 50], wb: 4.0, wt: 3.5},
-      ];
-      const fg = fingers(fs, 0.25, 'R');
-      const index = finGeo({B: [9.4, 31], C: [12.6, 44], T: [9.2, 50.6], wb: 4.0, wt: 3.3});
-      const thumbF = thumbOver({B: [12, 9], C: [19.6, 22], T: [15, 36.6], wb: 5.0, wt: 3.5}, 0.35, 0.35, 'L');
-      return {
-        back: D({sil: [palmD(32), ...fg.sil], lines: fg.lines}),
-        front: D({sil: [], over: [{fill: index.out, edge: smooth([...index.L.slice(2), ...index.cap, ...index.R.slice().reverse().slice(0, 8)])}, thumbF]}),
-      };
-    }
-    case 'ear': {
-      // phone at the ear: the back of the hand out, the fingers bent around the back edge of the phone — the tips to the face (−x); the
-      // thumb on the near side, under the phone. The caller draws the phone before the hand
-      const fs: Fin[] = [
-        {B: MCP.P, C: [-12.4, 43], T: [-18.4, 47], wb: 3.3, wt: 2.6},
-        {B: MCP.R, C: [-5.2, 50.4], T: [-13.2, 57], wb: 3.6, wt: 2.9},
-        {B: MCP.M, C: [2.6, 54], T: [-6, 63.4], wb: 3.8, wt: 3.0},
-        {B: MCP.I, C: [10.6, 52], T: [3.4, 63], wb: 3.7, wt: 3.0},
-      ];
-      const fg = fingers(fs, 0.4, 'R');
-      const thumb = finGeo({B: [11, 10], C: [16.6, 18], T: [17, 30], wb: 4.8, wt: 3.4});
-      return {front: D({sil: [thumb.out, palmD(), ...fg.sil], lines: fg.lines})};
-    }
-    case 'phone':
-    case 'cup': {
-      // a phone or a cup in the hand: the back of the hand at the near edge, the fingers lie across the back cover (the wall), the tips
-      // curl over the far edge; the thumb on the screen (behind the prop, back). For a cup the fingers form an arc
-      const cup = shape === 'cup';
-      const b = cup ? -2.2 : -0.6; // fingers bend towards the little finger — wrapping a cylinder
-      const fs: Fin[] = [
-        {B: [-10.2, 30.6], C: [-10.6 + b, 39], T: [-11.4, 46.6], wb: 3.4, wt: 2.9},
-        {B: [-3.8, 32.6], C: [-4 + b, 42.6], T: [-4.6, 51.6], wb: 3.8, wt: 3.2},
-        {B: [2.9, 33.4], C: [3.2 + b, 44], T: [2.8, 53.6], wb: 4.0, wt: 3.4},
-        {B: [9.6, 32], C: [10.2 + b, 42], T: [9.8, 50.6], wb: 3.9, wt: 3.3},
-      ];
-      const fg = fingers(fs, 0.3, 'R');
-      const thumb = finGeo({B: [11, 9], C: [17.4, 17], T: [17, 30], wb: 4.9, wt: 3.4});
-      return {back: D({sil: [thumb.out]}), front: D({sil: [palmD(32), ...fg.sil], lines: fg.lines})};
-    }
-    case 'box': {
-      // a box at the waist: the hand on the side face, view from the thumb side; fingers go under the bottom — the tips show in steps, the
-      // thumb on the front face
-      const fs: Fin[] = [
-        {B: [-4.6, 32], C: [-2.4, 41], T: [9.6, 41.4], wb: 3.5, wt: 2.9},
-        {B: [-5.8, 33], C: [-4.6, 45], T: [10.4, 46.6], wb: 3.8, wt: 3.1},
-        {B: [-7, 33], C: [-7, 49.6], T: [8.4, 51.4], wb: 4.0, wt: 3.2},
-        {B: [-8.2, 32], C: [-9.4, 52], T: [4.4, 54.6], wb: 4.2, wt: 3.4},
-      ];
-      const fg = fingers(fs, 0.5, 'R');
-      const tf: Fin = {B: [9.4, 11], C: [11, 23], T: [6.6, 35], wb: 5.7, wt: 4.3};
-      return {front: D({sil: [palmS, ...fg.sil, finGeo(tf).out], lines: fg.lines, over: [thumbOver(tf, 0.3, 0.62, 'L')]})};
+      // a phone at the ear — the hand as one shape over the phone; a folder and a phone in the hand — the thumb behind the prop (back)
+      if (shape === 'ear') return {front: D({sil: [tg.out, palmD(a.yk), ...fg.sil], lines: fg.lines})};
+      return {back: D({sil: [tg.out]}), front: D({sil: [palmD(a.yk), ...fg.sil], lines: fg.lines})};
     }
   }
+  const pose = handPose(shape, q, from);
+  if (pose) {
+    const R = (pick: RigPick = ALL) => rigLayer(rigHand(pose, view, shape === 'flat' ? {...pick, noCrease: true} : pick), st);
+    switch (shape) {
+      case 'phone':
+      case 'cup':
+        // the back of the hand at the near edge of the prop, the fingers across the back cover (the wall); the thumb behind the prop
+        return {back: R({thumb: true}), front: R({palm: true, fingers: [0, 1, 2, 3]})};
+      case 'ear':
+        // a phone at the ear: the hand with its back over the phone, the thumb on the near side
+        return {front: R()};
+      case 'pen':
+        // the pen between the layers: the palm, the tucked fingers, the bases of the index finger and the thumb — under it; the index
+        // finger from the middle joint and the thumb from its second phalanx — over it
+        return {back: R({palm: true, fingers: [0, 1, 2, 3], thumb: true}), front: R({fingers: [0], thumb: true, from: 1, thumbFrom: 1})};
+      default:
+        return {front: R()};
+    }
+  }
+  if (shape === 'tap') {
+    // the phone lies on the palm screen up (seen from above, squeezed by the view; the body draws it between back and front, the centre —
+    // HAND_GRIP.tap.c, 36 × 24 frame units). The hand is one shape around the phone: at the near edge the heel of the palm shows, along
+    // the side edge (−x) a band of the hand wider than the phone (the finger bases), from it three fingers curl over the edge onto the
+    // screen: the fingers start on the visible band instead of hanging over the phone separately. The thumb goes from the mound at the
+    // wrist over the other edge above the screen and taps: q = 0 — it touches, 1 — it is lifted
+    const th = tapThumb(q);
+    return {
+      back: D({sil: [TAP_PALM, finGeo(th).out]}),
+      front: D({sil: [], over: [...TAP_TIPS.map((f) => thumbOver(f, 0.4, 0.4)), thumbOver(th, 0.25, 0.25, 'L')]}),
+    };
+  }
+  return {front: null};
+}
+
+// ---------- self-check of the drawing (the pose journal → tools/hands_check.mjs) ----------
+/** A polyline along a path of absolute M, L, C, Z commands: the palm outline. */
+function pathPoly(d: string): P[] {
+  const t = d.match(/[MLCZ]|-?\d*\.?\d+(?:e-?\d+)?/g) ?? [];
+  const out: P[] = [];
+  let i = 0;
+  let cur: P = [0, 0];
+  let cmd = 'M';
+  const num = () => parseFloat(t[i++]);
+  while (i < t.length) {
+    if (/[MLCZ]/.test(t[i])) cmd = t[i++];
+    if (cmd === 'Z') continue;
+    if (cmd === 'C') {
+      const a: P = [num(), num()], b: P = [num(), num()], e: P = [num(), num()];
+      for (let k = 1; k <= 8; k++) {
+        const s = k / 8, m = 1 - s;
+        out.push([m * m * m * cur[0] + 3 * m * m * s * a[0] + 3 * m * s * s * b[0] + s * s * s * e[0], m * m * m * cur[1] + 3 * m * m * s * a[1] + 3 * m * s * s * b[1] + s * s * s * e[1]]);
+      }
+      cur = e;
+    } else {
+      cur = [num(), num()];
+      out.push(cur);
+    }
+  }
+  return out;
+}
+const distSeg = (p: P, a: P, b: P): number => {
+  const dx = b[0] - a[0], dy = b[1] - a[1];
+  const l2 = dx * dx + dy * dy;
+  const t = l2 > 1e-9 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2)) : 0;
+  return Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t);
+};
+const inPoly = (poly: P[], p: P): boolean => {
+  let c = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    if ((poly[i][1] > p[1]) !== (poly[j][1] > p[1]) && p[0] < ((poly[j][0] - poly[i][0]) * (p[1] - poly[i][1])) / (poly[j][1] - poly[i][1]) + poly[i][0]) c = !c;
+  }
+  return c;
+};
+/** How far a point is outside an outline (0 — inside). */
+const outside = (poly: P[], p: P): number => (inPoly(poly, p) ? 0 : Math.min(...poly.map((q, i) => distSeg(p, q, poly[(i + 1) % poly.length]))));
+/** The axis of a hand part: points and the half-width at them. */
+type Bone = {pts: P[]; ws: number[]};
+const finBone = (f: Fin, n = 10): Bone => {
+  const pts: P[] = [];
+  const ws: number[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, c = t * t;
+    pts.push([a * f.B[0] + b * f.C[0] + c * f.T[0], a * f.B[1] + b * f.C[1] + c * f.T[1]]);
+    ws.push(f.wb + (f.wt - f.wb) * Math.pow(t, 1.4));
+  }
+  return {pts, ws};
+};
+/** What is drawn: the palm outline (null — none), the fingers in order and the thumb. The same choice of the drawing as in handParts.
+ *  rig — the skeleton only (to compare a drawn shape with its skeleton). */
+function handSkel(shape: HandShape, view: HandView, q = 0, from?: HandMix, rig = false): {palm: P[] | null; fins: Bone[]; thumb: Bone | null} {
+  const side = view === 'radial' || view === 'ulnar';
+  if (!rig) {
+    if (side) {
+      const art = sideArt(shape, from);
+      if (art) return {palm: pathPoly(smooth(art.body) + ' Z'), fins: art.fins.map((f) => finBone(f)), thumb: finBone(art.thumb)};
+    } else if (!from || from.k >= 1 || from.shape === shape) {
+      const a = FACE[shape];
+      if (a) return {palm: pathPoly(palmD(a.yk)), fins: [...a.fins, ...(a.index ? [a.index] : [])].map((f) => finBone(f)), thumb: finBone(a.thumb)};
+    }
+  }
+  const pose = handPose(shape, q, from);
+  if (pose) {
+    const pr = projOf(view);
+    const th = thumb(pose.th, pr);
+    return {palm: pathPoly(palmOf(view, pr)), fins: [0, 1, 2, 3].map((i) => {
+      const f = finger(i, pose.f[i], pose.spread, pr);
+      return {pts: f.pts, ws: f.ws};
+    }), thumb: {pts: th.pts, ws: th.ws}};
+  }
+  if (shape === 'tap') return {palm: pathPoly(TAP_PALM), fins: TAP_TIPS.map((f) => finBone(f)), thumb: finBone(tapThumb(q))};
+  return {palm: null, fins: [], thumb: null};
+}
+/** The point and the half-width of a part at share t of its length (by the point numbers). */
+const boneAt = (b: Bone, t: number): {p: P; w: number} => {
+  const x = Math.max(0, Math.min(1, t)) * (b.pts.length - 1);
+  const i = Math.min(b.pts.length - 2, Math.floor(x));
+  const k = x - i;
+  return {p: [b.pts[i][0] + (b.pts[i + 1][0] - b.pts[i][0]) * k, b.pts[i][1] + (b.pts[i + 1][1] - b.pts[i][1]) * k], w: b.ws[i] + (b.ws[i + 1] - b.ws[i]) * k};
+};
+const boneLen = (b: Bone): number => b.pts.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - b.pts[i][0], p[1] - b.pts[i][1]), 0);
+/** The length of the free end of finger a next to its neighbour b: from the tip back until the finger meets the neighbour or the palm. */
+const freeEnd = (a: Bone, b: Bone, palm: P[]): number => {
+  const N = 24;
+  for (let i = N; i >= 0; i--) {
+    const {p, w} = boneAt(a, i / N);
+    let near = Infinity;
+    let wn = 0;
+    for (let j = 0; j <= N; j++) {
+      const q = boneAt(b, j / N);
+      const d = Math.hypot(p[0] - q.p[0], p[1] - q.p[1]);
+      if (d < near) {
+        near = d;
+        wn = q.w;
+      }
+    }
+    if (near <= w + wn + 0.4 || inPoly(palm, p)) return (1 - i / N) * boneLen(a);
+  }
+  return boneLen(a);
+};
+const mixKey = (shape: HandShape, from?: HandMix) => (from && from.k < 1 && from.shape !== shape ? `${from.shape}${from.k.toFixed(2)}` : '');
+const AUDIT = new Map<string, {gap: number; notch: number}>();
+/** The self-check of a hand drawing: gap — how far a finger base (or the thumb base) is outside the palm outline (a finger torn off);
+ *  notch — the deepest notch between neighbouring fingers (both fingers apart for that length from the tips), frame units. */
+function drawAudit(shape: HandShape, view: HandView, q = 0, from?: HandMix, rig = false): {gap: number; notch: number} {
+  // (the drawing depends only on the shape, the view, the progress q and the transition — the result is remembered: the journal is
+  // written for every hand of every frame)
+  const key = `${shape}|${view}|${q.toFixed(2)}|${mixKey(shape, from)}|${rig ? 1 : 0}`;
+  const hit = AUDIT.get(key);
+  if (hit) return hit;
+  const s = handSkel(shape, view, q, from, rig);
+  let gap = 0;
+  let notch = 0;
+  if (s.palm) {
+    for (const b of [...s.fins, ...(s.thumb ? [s.thumb] : [])]) gap = Math.max(gap, outside(s.palm, b.pts[0]));
+    for (let i = 0; i + 1 < s.fins.length; i++) notch = Math.max(notch, Math.min(freeEnd(s.fins[i], s.fins[i + 1], s.palm), freeEnd(s.fins[i + 1], s.fins[i], s.palm)));
+  }
+  const res = {gap, notch};
+  if (AUDIT.size > 20000) AUDIT.clear();
+  AUDIT.set(key, res);
+  return res;
+}
+const GRIP = new Map<string, number>();
+/** The grip: how many fingers lie on a prop — the prop axis (a segment through c along a, 14 frame units both ways: the part of the prop
+ *  inside the hand) passes under a finger, within its width. A fist holds a prop when at least three fingers lie on it: a prop along one
+ *  finger (under none — next to the hand) is not a grip. */
+function gripAudit(shape: HandShape, view: HandView, q: number, from: HandMix | undefined, c: P, a: P, rig = false): number {
+  const key = `${shape}|${view}|${q.toFixed(2)}|${mixKey(shape, from)}|${rig ? 1 : 0}|${c[0].toFixed(1)},${c[1].toFixed(1)}|${a[0].toFixed(2)},${a[1].toFixed(2)}`;
+  const hit = GRIP.get(key);
+  if (hit !== undefined) return hit;
+  const s = handSkel(shape, view, q, from, rig);
+  const al = Math.hypot(a[0], a[1]) || 1;
+  const A: P = [c[0] - (a[0] / al) * 14, c[1] - (a[1] / al) * 14];
+  const B: P = [c[0] + (a[0] / al) * 14, c[1] + (a[1] / al) * 14];
+  const n = s.fins.filter((b) => {
+    for (let i = 0; i <= 16; i++) {
+      const p = boneAt(b, i / 16);
+      if (distSeg(p.p, A, B) <= p.w) return true;
+    }
+    return false;
+  }).length;
+  if (GRIP.size > 20000) GRIP.clear();
+  GRIP.set(key, n);
+  return n;
+}
+
+/** CharacterStyle.handAudit of the style: the self-check of the drawn hand of a pose (gap, notch) and, with a prop in the fist, how many
+ *  fingers lie on it (wrap; grip — the prop centre and axis in the hand frame). */
+export function handAudit(h: {shape: HandShape; view: HandView; q: number; from?: HandMix}, grip?: {c: P; axis: P}): {gap: number; notch: number; wrap?: number} {
+  const d = drawAudit(h.shape, h.view, h.q, h.from);
+  return grip ? {...d, wrap: gripAudit(h.shape, h.view, h.q, h.from, grip.c, grip.axis)} : d;
 }

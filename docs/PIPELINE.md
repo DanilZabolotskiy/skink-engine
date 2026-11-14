@@ -14,7 +14,7 @@ python tools/pipeline/run.py <script.md> --steps parse,timeline,precheck --scene
 python tools/pipeline/run.py <script.md> --until 120 --go                 # only the first ~2 minutes
 python tools/pipeline/run.py <script.md> --scenes 01,02 --go              # only these scenes
 python tools/pipeline/run.py <script.md> --steps render,assemble          # by steps
-python tools/pipeline/run.py episode channels/<channel>/episodes/s01e01/en   # join the chapters of an episode
+python tools/pipeline/run.py episode channels/<channel>/episodes/s01e01/en   # the episode master 1080; --4k — 3840×2160 (below, "Episode master")
 python tools/pipeline/sfx_list.py <script.md>                             # chapter sounds, the generation estimate → audio/sfx_needed.md
 python tools/pipeline/sheets.py <work folder> --scenes 05,08 [--at 0.2]   # sheets from stills without rendering a video
 python tools/pipeline/staging.py verbs <work folder> [--shots 04.02]      # "line → event" check alone
@@ -64,7 +64,7 @@ An `ENVIRONMENT` line in precheck is a browser failure, not staging: repeat the 
   - `actions`, `poses`, `action_verbs` — channel additions to `lib/staging/actions.json`.
   - `hud` — `stamp` (optional: a stamp under the title bar in every shot), `episode_plate` (`"Episode {ep}"`).
   - `timing` — `lead_in`, `gap`, `tail`, `min_shot`, `scene_dip`, `est_syllables_per_sec` (speech rate for `--estimate`: letters per second).
-  - `subtitles` — `max_chars`, `highlight` (`[[regex, replacement]]`, `{…}` is drawn in the accent colour); `check` — thresholds.
+  - `subtitles` — `max_chars`, `min_dur`, `highlight` (`[[regex, replacement]]`, `{…}` is drawn in the accent colour), `ytt` (`colors` per speaker, `others`, `highlight`, `font` — the YouTube subtitles, below); `check` — thresholds.
 - `voices.json` — speaker → `voice_id`, loudness (`lufs`), `model`, `settings`, `aliases`; `voice_suffix` — a speaker `<NAME>_VOICE` imitates `<NAME>` with an ffmpeg effect; `effects.phone` — the phone band (`"quiet": true` — the loudness check does not flag these lines as quiet).
 - `music.json` — tracks, moods (keys → track and segment), loudness, ducking.
 - `sfx.json` — the sound library: `sounds` (ready files `assets/sound/<id>.mp3`), `planned` (to be generated: prompt, length, loop), `match`, `needs` / `see` (a loop that needs a visible source), `ignore`. A sound not in the library is silence.
@@ -84,10 +84,45 @@ An `ENVIRONMENT` line in precheck is a browser failure, not staging: repeat the 
 
 ## Render
 
-- Remotion on the CPU, `--gl=swangle`, h264 yuv420p bt709, scene by scene with a cache.
+- Remotion on the CPU, `--gl=swangle`, h264 CRF 18 yuv420p bt709, scene by scene with a cache.
+- Working chapter renders (checks, guard, edit rounds, the chapter mp4) — the frame size of the timeline (the example: 1920×1080), CRF 18 (`render.CRF`). 4K — only the episode master with `--4k` (below).
 - The code is copied to `<temp>/<project folder>-mirror` (`tools/mirror.py`, `node_modules` as a link; an episode worktree gets its own copy; `SKINK_MIRROR` — another folder). See [STACK.md](STACK.md).
 - The render goes through the CPU queue: one render per machine, next to it only a chunk of stills ([PARALLEL.md](PARALLEL.md), "CPU queue").
 - Remotion renders no sound; ffmpeg mixes it.
+
+## Episode master
+
+The episode master is 1080 with CRF 18 by default; 4K — by a flag. Working chapter renders stay 1080, CRF 18.
+
+```
+python tools/pipeline/run.py episode channels/<channel>/episodes/s01e01/en             # 1080 master → s01e01_en.mp4 and .srt
+python tools/pipeline/run.py episode channels/<channel>/episodes/s01e01/en --4k        # a 3840×2160 master
+python tools/pipeline/run.py episode <episode folder> --4k --chapters 01,02            # only the 4K render of these chapters, no joining
+python tools/pipeline/run.py episode <episode folder> --out <file>.mp4                 # the master into another file
+```
+
+- The chapters of an episode — `chNN/chNN.mp4` in the language folder, in order.
+- **1080** (default): the chapter videos `render/video.mp4` are joined without re-encoding.
+- **4K** (`--4k`): every chapter is rendered anew by the same compositions and `timeline.json` with scale 2 (Remotion `scale`): the vector frame is drawn at 3840×2160, not an upscale of 1080.
+  - The cache is per scene, as for a chapter, in `<episode folder>/master4k/chNN/`: the folders of accepted chapters are not touched. A 4K chapter has as many frames as its `render/video.mp4`, otherwise an error.
+  - The render goes in chunks of `--batch` frames (default 5400, 3 min of video), each chunk with its own place in the CPU queue: renders of other sessions pass between chunks.
+  - Render from an own code snapshot, so that chapter edits in the same checkout do not land in the middle of the run: `SKINK_MIRROR=<temp>/<project folder>-master-mirror python tools/mirror.py`, then the master command with the same `SKINK_MIRROR` and `SKINK_MIRROR_FROZEN=1`.
+  - A measurement (8 cores / 16 threads, `--concurrency 12`, a 40 min episode): 4K takes 1.8–2.9 s of render per 1 s of video, 2.0 on average, 3–5 times longer than 1080. The bitrate is 3.0 Mbit/s against 1.3 for 1080 at the same CRF: a flat vector picture compresses well.
+- Sound — `audio/mix.wav` of the chapters: AAC 192k, the master loudness is the same.
+- The master is written to `<episode>_<language>.tmp.mp4` and replaces `<episode>_<language>.mp4` only as a whole. With `--out` — right into that file.
+
+## Episode subtitles for YouTube — `tools/ytt.py`
+
+```
+python tools/ytt.py channels/<channel>/episodes/s01e01/en [--journal]     # → s01e01_en.ytt and .ttml next to the master
+python tools/ytt_check.py channels/<channel>/episodes/s01e01/en          # a sheet of the pages over the frames, overlaps, timing against the speech
+python tools/ytt_burn.py --ytt <file>.ytt --video <master>.mp4 --frames 9.5,20   # stills as the YouTube player draws them (Chrome)
+```
+
+- The same cues as the `.srt` of the master, as `.ytt` (srv3): one line at the bottom centre, white with a dark edge and a 59 % background, a colour per speaker (`channel.json → subtitles.ytt.colors`, the rest — `others`), `{…}` of `subtitles.highlight` — the `highlight` colour.
+- A page moves off what the frame shows there — the place tag, a card, a head, a read sign (the frame journal of the check step; `--journal` takes it at the frames of the pages): up, to the top under the title bar, to the side; the next page of the same line stays in place. A world text is soft: a page on a document filling the frame stays at the bottom.
+- The time follows the voice (`audio/speech.wav`): a page starts with the voice and covers short pauses; a page is never shorter than `subtitles.min_dur`.
+- Upload the `.ytt` as the subtitle file of the video; the TTML is a fallback with colours and regions only.
 
 ## Sound
 

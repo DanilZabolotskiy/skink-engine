@@ -30,6 +30,7 @@
  "hud": {"episode_plate": "Episode {ep}"},
  "timing": {"lead_in": 0.35, "gap": 0.35, "tail": 0.5, "min_shot": 1.5, "scene_dip": 0.3, "est_syllables_per_sec": 14},
  "_doc_timing": "est_syllables_per_sec — speech rate for --estimate (no TTS): letters and digits per second (about 14 for English letters, 4.6 for Korean syllables).",
- "subtitles": {"max_chars": 42, "min_dur": 0.9, "highlight": [["(?i)\\b(ten|10)\\b", "{\\1}"]]},
+ "subtitles": {"max_chars": 42, "min_dur": 0.9, "highlight": [["(?i)\\b(ten|10)\\b", "{\\1}"]],
+  "ytt": {"colors": {"NARRATOR": "#FEFEFE", "MIRA": "#FFD24D", "OSCAR": "#A6DCFF"}, "others": "#FEFEFE", "highlight": "#7FE3D6"}},
  "check": {"silent_shot_sec": 5.0, "stt_min_ratio": 0.8, "stt_max_offset": 0.35, "music_max": 4}
 }

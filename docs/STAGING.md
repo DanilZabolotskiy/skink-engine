@@ -59,15 +59,17 @@ The layer between the script and Remotion. Its job: sound out of sync, props jum
 - On a shot:
   - `"view"`, `"move"`, `"cast"` — override what the script words give (`cast`: `{"who", "emo", "facing", "hold", "shoe"}`; `hold` — the figure's hands [right, left]);
   - `"sfx": {"paper": null}` — no script sound in the shot;
-  - `"cards": [{"at": "top|bottom|tl|tr|bl|br", "on": "<action or pose>"}]` — place and moment of the TEXT cards in order; `"cardsAt": "bottom"`;
+  - `"cards": [{"at": "top|bottom|tl|tr|bl|br", "on": "<action or pose>"}]` — place and moment of the TEXT cards in order; `"on": "line:N"` — with the start of the N-th line of the shot (a caption of an off-screen voice); `"cardsAt": "bottom"`;
   - `"lead": 1.5` — pause before the first line, s (action before speech);
   - `"effects": {"0": "phone"}` — processing of a line of the shot (a phone voice);
+  - `"voice_cut": {"0": {"file": "<take>.mp3", "head": 1.0, "why": "…"}}` — an extra sound at the start of a take (the TTS voiced "…" as a word): the clip voice starts at `head` s, a cut in the silence before the speech (`onset`); the clip place and the mouth stay, no re-render — steps `parse,timeline,audio,assemble,check`. The entry belongs to its take: another file, no `why` or `head` ≥ `onset` — a staging error;
   - `"bed": false` — silence by design; `"shake": "<why>"` — frame shake;
   - `"verbs_ok": {"<phrase>": "<why the frame shows it without an event>"}`;
   - `"emo_cut": {"<who>": "<why>"}` (or `"cut"` in a `cast` entry) — another emotion from the first frame;
   - `"offscreen_sfx": {"<id>": "<why the source is clear without the frame>"}`;
   - `"cut_in": "<why>"` on the first shot of a scene — a hard cut between scenes without a dip;
   - `{"do": "set", "obj": "gaze:<role>", "ray": 1}` — the look of a figure facing the camera goes where its target is seen in the frame: a target farther than the head is taken on the camera ray 0.5 m in front of the head (`gazeBy`, `lib/chapter/room.tsx`). For a target behind the figure or right above its head (otherwise a turn through 180° with a random sign, a look to the side).
+  - `{"do": "set", "obj": "hud", "stamp": 1}` — the stamp of the title bar in a light colour on the bar backing: the background under it is dark or busy and the dim stamp merges with it.
 - At the top level of `staging.json`: `"lip_raw": "<why>"` — the mouth follows the aligned syllables as they are, without stretching short ones (for a chapter accepted before that rule: its rebuilt timeline keeps the mouth of the accepted video).
 
 ## What the pipeline does
@@ -124,10 +126,10 @@ Journal frames: start, middle and end of a shot, every step, the end of every ge
 | card on a head; card / text under the title bar; text cut by the edge or its box, rotated, squeezed, out of its sign; required text not readable; text long under the title bar | journal | yes |
 | event without a visible change (look, gesture, a frozen hand, an event hand, a hand at a leaf); view not as in cast; path not at the prop; prop jump at a cut; place prop changed; prop without a cause; appearing / vanishing within one frame | journal + event pixels | yes |
 | step of an invisible figure; figure walks without steps; path through a prop | journal | yes |
-| figure jump at a cut in the same view; look reset by an insert; hard cut with a dip; day ambience at night | timeline + scenes | yes |
+| figure jump at a cut in the same view; look reset by an insert; hard cut with a dip; day ambience at night; the impression in the bar badge (in a `stamp.press` shot the badge is not the one of the chapter start: TEXT `stamp "…"` sets the bar badge) | timeline + scenes | yes |
 | voice not in band (phone) | voice files | yes |
 | timing in kit code | kit sources | yes |
-| arm poses: lengths, elbow, wrist, thumb side, palm rotation, grip, "wing", stump, hand without an arm, kink, neck wedge | `tools/hands_check.mjs` | yes |
+| arm poses: lengths, elbow, wrist, thumb side, palm rotation, grip, "wing", stump, hand without an arm, kink, neck wedge; fingers (the joints of the skeleton pose; with the hand self-check of the style — a finger torn off the palm), fingers apart, wrap, prop through the arm; `--motion` — jump between neighbouring frames of a gesture; `--sweep` — every engine pose without a chapter: jump, mirror | `tools/hands_check.mjs` | yes |
 | jump in frame; small jump; jitter, drift of a static shot; camera jerk; sound on a still frame | video frames | no |
 | ambience dropout at a cut; line quieter than its neighbours | the mix | no |
 

@@ -663,6 +663,13 @@ def continuity_checks(tl: dict, scenes: list) -> list:
             h = int(t.split(':')[0])
             if h >= 22 or h < 5:
                 err(s, 'day ambience at night', f'scene {s["scene"]} is in {t}, but the ambience "{s["bed"]}" is a day one: a night ambience for the place (script SFX or the place ambience)')
+    # TEXT `stamp "…"` sets the badge of the title bar from that shot to the end of the chapter; in the shot of a stamp press the badge is
+    # not the one of the chapter start — the impression was written as the badge (it stood in the frame before the press, and the press
+    # added a second one); the impression is drawn by the kit (its own card or prop state)
+    for s in sh:
+        if s.get('stamp') != sh[0].get('stamp') and any(e.get('do') == 'stamp.press' for e in (s.get('stage') or {}).get('events', [])):
+            err(s, 'impression in the bar badge', f'in the stamp press shot the title bar badge is "{s.get("stamp")}", at the chapter start "{sh[0].get("stamp")}": '
+                f'TEXT `stamp "…"` sets the bar badge — the impression is drawn by the kit')
     for a, b in zip(sh, sh[1:]):
         txt = f'{b.get("on_screen", "")} {b.get("camera", "")}'
         if re.search(r'\bhard (switch|cut)\b|\bsmash cut\b', txt, re.I) and (b.get('dipIn') or a.get('dipOut')) and not re.search(r'\bblack\b', a.get('on_screen', ''), re.I):

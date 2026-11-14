@@ -59,7 +59,7 @@ For the reviewers of a chapter video (production rule 14: the machine checks fir
 
 **1:1 crop — hands, faces, texts**
 - An arm is one visible chain: shoulder, forearm, hand. No hand without a forearm in mid-frame, no stump, no "wing" at the chest; the elbow is not broken; the wrist is not bent back; the arm length is constant (rule 4d).
-- A hand comes from the library: a mitten with a thumb with a rounded tip; no "sausages", "claws" or "rakes"; a fist wraps the prop; a folder is held by its near edge; a phone at the ear — the palm at the cheek (rule 4d).
+- A hand comes from the library of the style: one solid silhouette, the fingers grow from the palm, a thumb with a rounded tip; a hanging hand from the side — the fingers together; no "sausages", "claws", "rakes", "lump" or fingers apart from the palm; a fist wraps the prop and the prop comes out of it on both sides along one axis; a long prop of a raised arm goes behind it; a folder is held by its near edge; a phone at the ear — the palm at the cheek (rule 4d).
 - A gesture does not read as something else: a rude finger, "stop", "please", a thumbs-up.
 - A neck from the front is a column from the collar under the head; from behind it comes out of the collar; a head turn from behind shows the features of the face, not an empty oval (rules 3, 4d).
 - Texts: no typos; centred in their sign and inside it; whole in the frame, rotated no more than 30° and squeezed no more than twice; nothing cut in half at the title bar; a card does not cover a head (rules 10, 11, 11a).

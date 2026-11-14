@@ -368,13 +368,20 @@ def build(scenes: dict, clips: dict, ch: Channel, staging: dict | None = None, u
             if ov.get('cardsAt'):  # text cards at the bottom when at the top they cover a head (staging.json: "cardsAt": "bottom")
                 shot['cardsAt'] = ov['cardsAt']
             # place and moment of a card: staging.json "cards": [{"at": "top|bottom|tl|tr|bl|br", "on": "<action or pose of an
-            # event>"}] in TEXT order
+            # event>"}] in TEXT order; "on": "line:N" — with the start of the N-th line of the shot (a caption of an off-screen voice)
             for i, co in enumerate(ov.get('cards', [])):
                 if i >= len(cards) or not co:
                     continue
                 if co.get('at'):
                     cards[i]['at'] = co['at']
-                if co.get('on'):
+                ln_on = re.fullmatch(r'line:(\d+)', str(co.get('on') or ''))
+                if ln_on:
+                    k = int(ln_on.group(1)) - 1
+                    if 0 <= k < len(pl):
+                        cards[i]['from'] = round(pl[k][3], 3)
+                    else:
+                        stage_issues.append({'shot': sh['id'], 'rule': 'event', 'msg': f'card {i + 1}: the shot has no line {k + 1} ("{co["on"]}")'})
+                elif co.get('on'):
                     e = next((e for e in st['events'] if co['on'] in (e['do'], e.get('pose'), e.get('id'))), None)
                     if e is None:
                         stage_issues.append({'shot': sh['id'], 'rule': 'event', 'msg': f'card {i + 1}: no event "{co["on"]}"'})
@@ -402,6 +409,18 @@ def build(scenes: dict, clips: dict, ch: Channel, staging: dict | None = None, u
                               'text': c['text'], 'start': round(s0, 3),
                               'end': round(s0 + d, 3), 'clipStart': round(cs, 3), 'file': c.get('file'), 'estimate': c.get('estimate', False),
                               'lufs': c.get('lufs'), 'target_lufs': c.get('target_lufs', -18)})
+                # an extra sound at the start of a take (the TTS voiced "…" as a word): staging.json "voice_cut": {"<line number>": {"file": <take>,
+                # "head": s, "why": …}} — the clip voice from head; clipStart and the mouth do not change. The entry belongs to its take: another file — an error
+                vcut = ov.get('voice_cut', {}).get(str(i))
+                if vcut:
+                    bad = ('no why' if not vcut.get('why') else
+                           f'the entry is for the take "{vcut.get("file")}", but the chapter has "{c.get("file")}"' if vcut.get('file') != c.get('file') else
+                           f'head {vcut.get("head")} s is not before the speech start ({c["onset"]} s): the cut would eat the line'
+                           if not 0 < (vcut.get('head') or 0) < c['onset'] else None)
+                    if bad:
+                        stage_issues.append({'shot': sh['id'], 'rule': 'voice_cut', 'msg': f'line {i}: {bad}'})
+                    else:
+                        lines[-1]['head'] = vcut['head']
                 chars = c['chars']
                 disp_txt = ''.join(x[0] for x in chars)
                 pos = 0
