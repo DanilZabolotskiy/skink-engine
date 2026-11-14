@@ -73,6 +73,8 @@ export type FigureOpts = {
   pace?: string; // walk pace instead of the walk event (pose labs)
   breath?: number; // breathing amplitude (Character.breath): smaller in close-ups
   tapLift?: number; // thumb lift in tap (Character.tapLift)
+  phone?: Look['phone']; // the look of the phone in the hand for this frame (Look.phone): the kit sets the screen (lit / dark) by its state
+  box?: Look['box']; // the look of the box in the hands (Look.box): the kit sets the colours of its own box (a wet one — dark, with a stain)
 };
 
 /** Gesture of who at lt with the event fields (side, n, grip, stay, ramp) — like gestAt (lib/staging/stage.ts), but among running gestures the
@@ -121,7 +123,7 @@ export const Figure: React.FC<FigureOpts> = (o) => {
   const walkEv = sc && o.walk ? eventsOf(sc.stage, 'walk', undefined, o.m.who).find((e) => sc.lt >= e.t0 - 0.05 && sc.lt <= e.t1 + 0.05) : undefined;
   const pace = o.pace ?? (walkEv?.pace as string | undefined);
   const look0: Look | undefined = per.look
-    ? {...per.look, ...(hold ? {hold} : {})}
+    ? {...per.look, ...(hold ? {hold} : {}), ...(o.phone ? {phone: o.phone} : {}), ...(o.box ? {box: o.box} : {})}
     : undefined;
   const look: Look | undefined = graded && look0
     ? {...look0, ...(look0.hatColor ? {hatColor: g(look0.hatColor)} : {})}

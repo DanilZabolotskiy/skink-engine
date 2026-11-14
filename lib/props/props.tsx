@@ -10,18 +10,29 @@ export type PhoneFace = 'screen' | 'back' | 'edge' | 'flat';
 /** Items that hang from a fist (keys, a stamp) or lie in hooked fingers by their handle (a bag, a tote). */
 export type Hang = 'keys' | 'stamp' | 'bag' | 'tote';
 
+/** The look of a role's phone (Look.phone), so the phone in the hand is the same model as the one a kit draws on a table or in a box:
+ *  screen — the screen colour (a dark one reads as switched off and gets a glare), keys — the dial keys on the screen of a phone lying on
+ *  the palm, crack — a crack across the upper corner of the screen, body — the body colour, sc — a scale. No field — the default phone (a
+ *  light blue screen with dial keys). */
+export type PhoneLook = {screen?: string; keys?: boolean; crack?: boolean; body?: string; sc?: number};
+/** The look of a box held in both hands (Look.box), so it matches the box a kit draws on the floor or a counter: fill, top — the colours
+ *  of the front and the top face, tape, label — the tape and the shipping label, stain — wet cardboard: a dark stain from the bottom with
+ *  a wavy edge and drips, edge — the colour of their line (default — the outline). No field — the default light kraft box. */
+export type BoxLook = {fill?: string; top?: string; tape?: string; label?: string; stain?: string; edge?: string};
+
 /** An item in a hand and its placement: folder — a sheet in a folder, centre at, rotation rot (°); flashlight — body centre at, axis —
  *  towards the lens, len — length factor; cup — centre at, scale; phone — centre at, angle (rad, 0 — upright), face (screen, back cover,
- *  edge, or lying flat screen up), scale, squeeze along the axis (the phone turning over its edge); box — a box at the waist held in both
- *  hands, half-width w; pen — tail and tip; hang — the item hangs from point at, swing — its rotation around it (°), strap — the colour of
- *  a bag strap drawn over its outline (a dark strap over dark trousers does not read; no field — the default thin dark strap); mop — the
- *  clamp at base, the handle up to top, the rag hangs rag units down from the clamp, spread 0..1 — the strands spread on the floor. */
+ *  edge, or lying flat screen up), scale, squeeze along the axis (the phone turning over its edge), look — the role's phone; box — a box at
+ *  the waist held in both hands, half-width w, look — the role's box; pen — tail and tip; hang — the item hangs from point at, swing — its
+ *  rotation around it (°), strap — the colour of a bag strap drawn over its outline (a dark strap over dark trousers does not read; no
+ *  field — the default thin dark strap); mop — the clamp at base, the handle up to top, the rag hangs rag units down from the clamp,
+ *  spread 0..1 — the strands spread on the floor. */
 export type Item =
   | {kind: 'folder'; at: Pt; rot: number}
   | {kind: 'flashlight'; at: Pt; axis: Pt; len: number}
   | {kind: 'cup'; at: Pt; scale: number}
-  | {kind: 'phone'; at: Pt; angle: number; face: PhoneFace; scale: number; squeeze: number}
-  | {kind: 'box'; w: number}
+  | {kind: 'phone'; at: Pt; angle: number; face: PhoneFace; scale: number; squeeze: number; look?: PhoneLook}
+  | {kind: 'box'; w: number; look?: BoxLook}
   | {kind: 'pen'; tail: Pt; tip: Pt}
   | {kind: 'hang'; what: Hang; at: Pt; swing: number; strap?: string}
   | {kind: 'mop'; base: Pt; top: Pt; rag: number; spread: number};
@@ -68,23 +79,35 @@ function cup(it: Extract<Item, {kind: 'cup'}>, {line: L, sw}: PropStyle) {
 }
 
 /** A phone: upright with the screen or the back cover (camera) towards the viewer, on its edge, or lying screen up on the palm (seen from
- *  above: a light screen with rows of dial keys). */
+ *  above: a light screen with rows of dial keys); the role's look (PhoneLook) sets its colours, keys, crack and scale. */
 function phone(it: Extract<Item, {kind: 'phone'}>, {line: L, sw}: PropStyle) {
-  const {at, angle, face, scale: sc, squeeze: sy} = it;
+  const {at, angle, face, scale: sc0, squeeze: sy, look: ph} = it;
+  const body = ph?.body ?? '#23262F', scr = ph?.screen ?? '#9FD3FF', keys = ph?.keys ?? true;
+  const sc = sc0 * (ph?.sc ?? 1);
+  // a dark screen (switched off) gets a glare; the crack line is lighter on it
+  const dark = (parseInt(scr.slice(1, 3), 16) + parseInt(scr.slice(3, 5), 16) + parseInt(scr.slice(5, 7), 16)) / 3 < 70;
+  const crack = dark ? '#8A909A' : '#5A6470';
   return (
     <g transform={`translate(${n1(at[0])} ${n1(at[1])}) rotate(${n1((angle * 180) / Math.PI)}) scale(${sc} ${n1(sc * sy)})`}>
       {face === 'flat' ? (
         <>
-          <rect x={-28} y={-19} width={56} height={38} rx={8} fill="#23262F" stroke={L} strokeWidth={sw * 0.7} />
-          <rect x={-22} y={-14} width={44} height={28} rx={3} fill="#9FD3FF" />
-          {[0, 1, 2].map((i) => [0, 1, 2].map((j) => <rect key={`${i}${j}`} x={-14 + j * 10} y={-9.5 + i * 7.5} width={7} height={4} rx={1.8} fill="#5E8FBF" />))}
+          <rect x={-28} y={-19} width={56} height={38} rx={8} fill={body} stroke={L} strokeWidth={sw * 0.7} />
+          <rect x={-22} y={-14} width={44} height={28} rx={3} fill={scr} />
+          {keys && [0, 1, 2].map((i) => [0, 1, 2].map((j) => <rect key={`${i}${j}`} x={-14 + j * 10} y={-9.5 + i * 7.5} width={7} height={4} rx={1.8} fill="#5E8FBF" />))}
+          {dark && <path d="M -18 10 L -8 -12" stroke="#FFFFFF" strokeWidth={2.2} opacity={0.18} strokeLinecap="round" />}
+          {ph?.crack && <path d="M 22 -8 L 15 -5 L 17 -1 L 10 3 M 15 -5 L 11 -14 M 17 -1 L 22 1" stroke={crack} strokeWidth={1.3} fill="none" strokeLinejoin="round" />}
         </>
       ) : face === 'edge' ? (
-        <rect x={-9} y={-46} width={18} height={92} rx={6} fill="#23262F" stroke={L} strokeWidth={sw * 0.7} />
+        <rect x={-9} y={-46} width={18} height={92} rx={6} fill={body} stroke={L} strokeWidth={sw * 0.7} />
       ) : (
         <>
-          <rect x={-25} y={-46} width={50} height={92} rx={9} fill="#23262F" stroke={L} strokeWidth={sw * 0.7} />
-          {face === 'screen' ? <rect x={-18} y={-38} width={36} height={70} rx={4} fill="#9FD3FF" /> : (
+          <rect x={-25} y={-46} width={50} height={92} rx={9} fill={body} stroke={L} strokeWidth={sw * 0.7} />
+          {face === 'screen' ? (
+            <>
+              <rect x={-18} y={-38} width={36} height={70} rx={4} fill={scr} />
+              {ph?.crack && <path d="M 18 -27 L 11 -22 L 13 -17 L 6 -12 M 11 -22 L 7 -38 M 13 -17 L 18 -15" stroke={crack} strokeWidth={1.3} fill="none" strokeLinejoin="round" />}
+            </>
+          ) : (
             <>
               <rect x={-17} y={-37} width={20} height={26} rx={6} fill="#363A46" />
               <circle cx={-10} cy={-30} r={4.5} fill="#11131A" />
@@ -97,13 +120,29 @@ function phone(it: Extract<Item, {kind: 'phone'}>, {line: L, sw}: PropStyle) {
   );
 }
 
-function box(bw: number, {line: L, sw}: PropStyle) {
+/** A box at the waist; the role's look (BoxLook) sets its colours and a wet stain. */
+function box(bw: number, {line: L, sw}: PropStyle, bx?: BoxLook) {
+  // wet cardboard: a dark stain from the bottom up to a wavy line, two drips from above down to it
+  const wave = (x: number) => -462 + 9 * Math.sin((x / bw) * 2.9 + 0.6) + 5 * Math.sin((x / bw) * 7.3);
+  const wavePts = Array.from({length: 13}, (_, i) => {
+    const x = -bw + (2 * bw * i) / 12;
+    return `${n1(x)} ${n1(wave(x))}`;
+  });
   return (
     <g>
-      <rect x={-bw} y={-560} width={2 * bw} height={160} rx={6} fill="#C99A5B" stroke={L} strokeWidth={sw} />
-      <rect x={-bw} y={-560} width={2 * bw} height={28} fill="#B3854A" stroke={L} strokeWidth={sw * 0.6} />
-      <rect x={-16} y={-560} width={32} height={160} fill="#E6D3A0" opacity={0.9} />
-      <rect x={-bw * 0.62} y={-508} width={60} height={40} rx={4} fill="#F4F1EA" stroke={L} strokeWidth={3} />
+      <rect x={-bw} y={-560} width={2 * bw} height={160} rx={6} fill={bx?.fill ?? '#C99A5B'} stroke={L} strokeWidth={sw} />
+      {bx?.stain && (
+        <>
+          <path d={`M ${n1(-bw)} -402 L ${wavePts.join(' L ')} L ${n1(bw)} -402 Z`} fill={bx.stain} />
+          <path d={`M ${wavePts.join(' L ')}`} fill="none" stroke={bx.edge ?? L} strokeWidth={sw * 0.5} />
+          {[-0.55, 0.5].map((f) => <path key={f} d={`M ${n1(f * bw)} -530 L ${n1(f * bw + 3)} ${n1(wave(f * bw))}`} stroke={bx.edge ?? L} strokeWidth={sw * 0.7} strokeLinecap="round" />)}
+        </>
+      )}
+      <rect x={-bw} y={-560} width={2 * bw} height={28} fill={bx?.top ?? '#B3854A'} stroke={L} strokeWidth={sw * 0.6} />
+      <rect x={-16} y={-560} width={32} height={160} fill={bx?.tape ?? '#E6D3A0'} opacity={0.9} />
+      <rect x={-bw * 0.62} y={-508} width={60} height={40} rx={4} fill={bx?.label ?? '#F4F1EA'} stroke={L} strokeWidth={3} />
+      {/* the stain covers the outline of the front face at the bottom: the outline again on top */}
+      {bx?.stain && <rect x={-bw} y={-560} width={2 * bw} height={160} rx={6} fill="none" stroke={L} strokeWidth={sw} />}
     </g>
   );
 }
@@ -209,7 +248,7 @@ export function drawItem(it: Item, st: PropStyle): React.ReactNode {
     case 'phone':
       return phone(it, st);
     case 'box':
-      return box(it.w, st);
+      return box(it.w, st, it.look);
     case 'pen':
       return pen(it.tail, it.tip, st);
     case 'hang':

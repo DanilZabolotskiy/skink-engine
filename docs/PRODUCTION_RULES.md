@@ -41,6 +41,8 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - An ear is one shape clipped by the silhouette, without transparency: the far one does not vanish at a turn, the near one is not covered by a strand of the back hair. The nose does not switch sides within a frame when the head turns through full face.
    - A small detail of a face grows from zero and goes to zero; a sweat drop — one per emotion, at the temple on the skin, it grows with the emotion and stays. Machine: "small jump".
    - Precheck does not see a "small jump" — only the check step on the video does: a fix of a view change before the render is checked by the stills of every frame of the shot and `stage_check.small_pops`.
+   - A small jump also comes from a target that drifts during a hold: the `reach` point of a gesture (the palm slides over the sheet and the hand switches its view) or a look from behind at a walking figure (the hair at the head turn). During a hold `reach` stands still; the look goes to the place where the path ends. A head facing the camera turning through the threshold where the far ear vanishes (a look between two targets to the side) — the targets on one line; a gap between an arm and the body right above the place where a door edge stops — the figure stands so that the edge is behind the body.
+   - A view a kit switches on by a condition ("someone behind the glass": a glass film, a light on the figure) switches within a frame when the walker crosses the threshold — a "jump in frame". Such a view is for the whole shot or a transition by distance; the look target of a figure walking from behind is not the glass it passes (the head jumps into profile) but `down`.
    - A detail of a turn grows from zero by the angle; the points of a contour are not thinned by the turn (a chain of curls would renumber).
    - Something leaves by narrowing or fading over 0.25 s or longer. A shadow coming from behind a corner is clipped by the plane of the corner.
    - The far eye and brow stay inside the face silhouette and under the hair; they narrow from the outer corner and go.
@@ -62,6 +64,7 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - An even motion: acceleration, a constant speed, a stop (not ease-in-out with a peak three times the mean speed); at least two steps per segment.
    - `pace: run` — the knee forward, a bounce, bent arms swinging, a bag swinging; not a glide on straight legs.
    - Someone climbing away from the camera is not drawn facing it (a "moonwalk").
+   - Walking across the frame with the figure from behind or facing the camera is a "moonwalk" too: such a path goes along the camera axis.
    - A path does not go through a prop. Machine: "path through a prop".
    - Walking into the dark means darkening and vanishing: past the last lit lamp the figure darkens to a silhouette and disappears, and its steps are not heard then (`offscreen` from that step).
    - A path to a prop — `walk … "at": "<prop>"`; a figure with a gesture at a prop stands within reach (≤ 0.95 of the arm).
@@ -82,6 +85,10 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - `hold` is the figure's own hands, `[right, left]`: a prop stays in the same hand facing the camera and from behind, and in every shot of the scene.
    - From behind an arm holding something in front is a sleeve bent at an angle with the forearm going behind the back; a prop in a lowered hand is seen at the side by the hand; with a kit point (`reach`) the palm lies on that point.
    - A palm on a wall — the back of the hand towards the viewer; a palm towards the viewer at the head reads as a greeting.
+   - A fingertip on a line or a button — `push` with `grip: point` (a flat palm on a line reads as "stop"); a palm pressing a sheet to a wall beside a figure facing the camera — `grip: press` (a palm towards the viewer reads as "please").
+   - A button and a pane are pressed by a free hand: `hold` without the prop (not a fist with a torch). From behind a button is pressed by the hand nearer to the camera, the figure standing on the other side of the button: an arm across the chest hides behind the back — a hand out of the side without a forearm.
+   - A device in the hand from the first frame (a scanner) — `hold` of an item in the fist (`flashlight`) and `push` with that hand to the target: a kit drawing of the device at the `reach` point hangs in the air while the hand goes to it. A kit look target near the body is in front of the body on the side of the hand: a point at the body taken behind it sends the look at a phone in the hand to the side.
+   - A sheet a figure presses to a wall is at the depth of the wall, the figure with the hand on it over the wall: at a depth "behind the figure" the sheet goes behind the wall — no sheet in the frame and the hand clipped by the wall edge. Precheck and check do not see it: by eye, every prop of ON SCREEN is in the frame.
    - While a hero is busy with a hand (presses, writes, dials) or is `focused`, it does not blink.
    - A thumb has a rounded tip and a nail; hands of inserts and first-person hands come from the hand library too, in the perspective of a kit — by similarity (a turn and one scale), not squeezed along an axis.
    - **A door is moved by a gesture** `pull` / `push`: the hand at the kit's `reach` point follows the handle or the leaf, a point beyond reach is let go smoothly; the arm is visible through the whole motion; without a hand — only `by` (a closer) or `who` out of the frame. The prop goes into the hand farther from the leaf, the near free hand moves the leaf, the figure stands at the threshold. Machine: "event without a visible change" (a hand at a leaf).
@@ -98,6 +105,8 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - After an edit of `lib/character` or of the hands of a style — `node tools/hands_check.mjs --sweep` (every hold, gesture and hand point without a render): 0 ("finger", "fingers apart", "wrap", "prop through the arm", "jump", "mirror").
    - Two figures in a clinch — different clothing tones (the sleeves of one merged with the other: "without arms"); "down on one knee" — a leg with a visible knee bend and a foot, the head lower than the opponent's.
    - A hand on a prop nearer to the camera than the figure (a counter, a sack) is covered by it: the figure as a layer after the prop clipped by its far edge with a strip of the forearm, or the hand point above the prop silhouette. From behind a gesture point in front of the body gives a foreshortened forearm ("hand without an arm"): put the point to the side and low, the arm almost straight.
+   - The window of an arm over a counter top in front of the figure (a cut-out of the counter) opens when the hand is already over the top, not from the start of the motion: otherwise the arm comes out of the counter cut by a horizontal line in the middle of the top. Precheck and `hands_check` do not see it — the entry frames of the gesture by eye.
+   - A finger of an insert hand out of a fist with the back of the hand towards the viewer goes diagonally (about 35° off vertical), not straight up: a vertical finger in the middle of a fist reads as a rude gesture.
    - A prop is held as in life (a bottle neck up in every shot). A prop below the reach of a standing figure (there is no "bend down" pose): thrown — the hand leads it and lets go, it falls with acceleration and a sound; taken — the pick-up is hidden by a nearer prop, or the prop is already in the fist when seen, or it lies above the waist.
 
 ## Props
@@ -181,6 +190,7 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - The key sound of a shot is heard: its own level and processing if it must sound "behind a door" or "through a phone".
    - The TTS seed is constant and the same line gives the same take: a re-voicing needs a change of the text or the punctuation.
    - Line loudness: within ±2 LU of the target; a phone voice is duller by design. Machine: "line quieter than its neighbours".
+   - `norm_db` of a voice effect is counted from the loudness of the clip padded with silence to 1 s (`audio.lufs_of`), not from `lufs` of the timeline: for a short word they differ by about 3 dB — check the correction by measuring the word over 50 ms frames after the `audio` step.
 13a. **A sound matches its description.** Listen to every sound before using it in a chapter; the number of hits and buzzes is as described.
 13b. **No whisper and no delivery tags** unless the script asks for them.
 
@@ -195,4 +205,5 @@ Rules for the staging, animation and sound of every shot. They are numbered: the
    - A table of all sounds: the time, the id, the shot and what is seen in the frame at that second; every row is checked.
    - **Colour** is compared with the accepted reference of its preset by the same measurement (`tools/pipeline/color_check.py`); the norm is the median over the shots of a chapter, not one shot. A camera edit of a shot of papers — measure the colour of its frame before the render (`color_stats` on a frame of `sheets.py`).
    - A new machine check catches its earlier finding on the code and the video where it was, and gives no false errors on accepted shots.
+   - Speech recognition writes numbers as digits; the check reads every number in the counting the line text uses (`tools/pipeline/check.py → norm`: Sino-Korean, native before a counter word, native on its own), so a line heard right does not score low.
    - **The machine checks** in the `check` step everything of the table of [STAGING.md](STAGING.md), "Checks", and the colour against the reference; the poses — `tools/hands_check.mjs`. A check error — the video does not go to the owner. The rest — by eye; manual sound bindings (`cue`) — by the list of the report.

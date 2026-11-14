@@ -65,7 +65,7 @@ export function sweep(cb: (s: Sample) => void, full = false, style = 'webtoon'):
   for (const x of [-300, -200, -100, 0, 100, 200, 300]) for (const y of [-860, -740, -620, -500]) pts.push([x, y]);
   type GS = {pose: string; holds: [Hold, Hold][]; reach?: boolean; e?: Partial<BodyGest>[]; front?: boolean};
   const GEST: GS[] = [
-    {pose: 'push', holds: [['none', 'none'], ['folder', 'flashlight'], ['none', 'phone'], ['box', 'none']], reach: true, e: [{}, {grip: 'fist'}, {side: 'R'}, {side: 'L', grip: 'fist'}]},
+    {pose: 'push', holds: [['none', 'none'], ['folder', 'flashlight'], ['none', 'phone'], ['box', 'none']], reach: true, e: [{}, {grip: 'fist'}, {side: 'R'}, {side: 'L', grip: 'fist'}, {grip: 'point'}, {side: 'L', grip: 'press'}]},
     {pose: 'pull', holds: [['none', 'none'], ['tote', 'none'], ['folder', 'none']], reach: true, e: [{}, {side: 'R'}, {side: 'L'}]},
     {pose: 'rail', holds: [['none', 'none'], ['folder', 'flashlight']], reach: true, e: [{}, {side: 'R'}, {side: 'L'}]},
     {pose: 'count', holds: [['none', 'none'], ['none', 'bag'], ['folder', 'none'], ['rest', 'count']], e: [{n: 1}, {n: 3}, {n: 4}, {n: 4, side: 'L'}]},

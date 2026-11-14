@@ -10,7 +10,7 @@ import type {Face} from './emotions';
 import type {Hold, Look} from './looks';
 import {clamp, lerp} from '../anim';
 import {ARM_L1, ARM_L2, ArmLog, ELBOW_MIN, HandSide, HandView, Pt, V3, dirOf, handOf, ik3, liveView, sideVec, v3, wristClamp} from './arm';
-import {HAND_GRIP, HAND_LEN, HandMix, HandShape, fistGrip, handPose, handPt, isRig} from './hand';
+import {HAND_GRIP, HAND_LEN, HandMix, HandShape, fistGrip, handPose, handPt, isRig, pointTip} from './hand';
 import type {Hang, Item} from '../props/props';
 
 /** Height of the crown: a style scales its head around this point (CharacterStyle.headScale). */
@@ -45,9 +45,10 @@ const MOP_RAG = 116;
 const reachPalm = (s: number, w = 1): Pt => [s * 280 * w, -888];
 
 /** Gesture: pose, hold k, event fraction ph; event fields: side — the figure's own hand (R / L), n — how many fingers (count) or hits
- *  (knock), grip — the push grip (fist — a fist on the handle, flat — a palm on the leaf), dur — event length, stay — the pose stays after
- *  the event, ramp — the event fraction of the tap entry (default 0.15; 0.001 — the figure is in the phone from the first frame of the
- *  shot instead of a slow entry over a long event). */
+ *  (knock), grip — the push grip (fist — a fist on the handle, flat — a palm on the leaf; press — the palm presses a sheet to a wall,
+ *  facing with the back or the edge of the hand towards the viewer; point — the tip of the index finger on the point: a line of a sheet, a
+ *  button of a screen), dur — event length, stay — the pose stays after the event, ramp — the event fraction of the tap entry (default
+ *  0.15; 0.001 — the figure is in the phone from the first frame of the shot instead of a slow entry over a long event). */
 export type BodyGest = {pose: string; k: number; ph: number; side?: string; n?: number; grip?: string; dur?: number; stay?: boolean; ramp?: number};
 
 /** A hand: the frame (wrist W, fingers along f, thumb or palm side u, scale k), its shape and view; q — the progress of a live shape (count —
@@ -417,6 +418,7 @@ export function bodyPose(p: BodyIn): Body {
       let reachW = 1; // a point beyond the arm and hand length: the hand lets go of it smoothly instead of reaching for it like a stick
       let plane: [Pt, Pt] | null = null; // gesture pose set in the frame plane (elbow, wrist): entry and exit go in the frame too
       let planeOut = false; // during the motion the forearm turns through the side away from the body (outwards), not towards the middle
+      let palmIn = false; // grip press: the palm faces the sheet on a wall beside the figure — away from the viewer (facing), not towards
       if (g.pose === 'count') {
         // counts on fingers: the palm towards the viewer, the fingers up, they unfold one by one over the event (n — how many, default 4).
         // The arm is set in the frame plane: the elbow at the side slightly above the waist and slightly out, the hand above the shoulder
@@ -439,9 +441,18 @@ export function bodyPose(p: BodyIn): Body {
         // from the middle it was nearer than a hand length from the shoulder: the arm folded and the hand twisted to the point)
         const def: Pt = g.pose === 'rail' ? [s * 168, -560] : [s * 205, back ? -610 : -630];
         aim = p.reach ?? def;
-        shape = fistItem || g.pose === 'pull' || (g.pose === 'push' && g.grip === 'fist') ? 'fist' : g.pose === 'rail' ? 'rail' : 'flat';
-        view = shape === 'fist' ? restView : shape === 'rail' || back ? 'dorsal' : 'palmar';
-        gripL = shape === 'fist' ? HAND_GRIP.fist!.grip : shape === 'rail' ? HAND_GRIP.rail!.grip : [0, 36];
+        // push with grip press / point: facing, a palm on a sheet at a wall beside the figure shows the edge of the hand to the viewer (a
+        // palm towards the viewer there reads as "please"); the tip of the index finger goes on a line or a button (a flat palm on a line
+        // reads as "stop")
+        const gPress = g.pose === 'push' && g.grip === 'press' && !fistItem;
+        const gPoint = g.pose === 'push' && g.grip === 'point' && !fistItem && !!p.reach; // a finger only on a kit point
+        palmIn = gPress;
+        shape = fistItem || g.pose === 'pull' || (g.pose === 'push' && g.grip === 'fist') ? 'fist' : g.pose === 'rail' ? 'rail' : gPoint ? 'point' : 'flat';
+        // a finger from behind is seen from the side (the natural view of an arm reaching forward: the right hand from the thumb side, the
+        // left one from the little finger side), facing — from the palm (the hand enters and leaves in this view: the back of the hand in
+        // the hold turned the hand over on the exit)
+        view = shape === 'fist' ? restView : gPoint ? (back ? (s > 0 ? 'radial' : 'ulnar') : 'palmar') : shape === 'rail' || back ? 'dorsal' : gPress ? 'radial' : 'palmar';
+        gripL = shape === 'fist' ? HAND_GRIP.fist!.grip : shape === 'rail' ? HAND_GRIP.rail!.grip : shape === 'point' ? pointTip(view) : [0, 36];
         if (shape === 'rail') q = g.ph * (g.dur ?? 2) * 1.5; // fingers tap: 1.5 cycles per second (6 touches)
         // the arm reaches the target almost in the frame plane (a small depth): a forearm foreshortened towards the viewer is a stump,
         // and the hand on it spins from a small shift. The hand continues the arm along the line shoulder → target (a palm on the leaf
@@ -521,6 +532,22 @@ export function bodyPose(p: BodyIn): Body {
             }
           }
         }
+        // a fingertip (grip point): the hand view is the natural turn (liveView) of the arm already brought to the point, then the tip is
+        // fitted to that view, and the same view is drawn (fixed) — otherwise the natural turn wavers between the back of the hand and the
+        // edge, and the tip leaves the point by the width of the hand (the journal: "hand not touching" by 25–33 units; "palm twisted" by
+        // 138° with a view chosen in advance)
+        if (gPoint && aim) {
+          for (let pass = 0; pass < 3; pass++) {
+            const v1 = solve(Tg, poleG, view, shape, {q, dir}).h.view; // the palm by the neutral of the arm (not the palm to the target)
+            if (v1 === view) break;
+            view = v1;
+            gripL = pointTip(view);
+            for (let it = 0; it < 8; it++) {
+              const g1 = solve(Tg, poleG, view, shape, {q, dir, fixed: true}).h.at(gripL[0], gripL[1]);
+              Tg = [Tg[0] + aim[0] - g1[0], Tg[1] + aim[1] - g1[1], Tg[2]];
+            }
+          }
+        }
         note = g.pose === 'pull' ? 'pulls a door: arm to the handle foreshortened' : g.pose === 'push' ? 'pushes a door away: arm to the leaf foreshortened' : 'hand on the rail';
       }
       const gw = gk * reachW;
@@ -529,12 +556,29 @@ export function bodyPose(p: BodyIn): Body {
       // natural turn (solve → liveView)
       const on = gw > 0.45;
       const dirK = clamp((gw - 0.2) / 0.6);
-      // a palm on a door leaf faces the target (away from the shoulder), on a rail — down; a fist on a handle has the thumb up and the palm
-      // towards the middle of the body
-      const palmG: V3 | undefined = shape === 'rail' ? [0, 1, 0] : shape === 'flat' && aim ? v3.norm([aim[0] - S[0], aim[1] - S[1], zb * 60]) : shape === 'fist' ? v3.norm([-s, 0.25, 0]) : undefined;
+      // a palm on a door leaf faces the target (away from the shoulder), on a sheet pressed to a wall (grip press) — the wall; on a rail —
+      // down; a fist on a handle has the thumb up and the palm towards the middle of the body
+      const palmG: V3 | undefined = shape === 'rail' ? [0, 1, 0] : shape === 'flat' && aim ? v3.norm([aim[0] - S[0], aim[1] - S[1], (palmIn ? -zb : zb) * 60]) : shape === 'fist' ? v3.norm([-s, 0.25, 0]) : undefined;
       const restShape: HandShape = fistItem || run ? 'fist' : 'relaxed';
       const mixK = clamp((gw - 0.12) / 0.6);
-      const mix: HandMix | undefined = isRig(shape) && shape !== restShape && mixK < 1 ? {shape: restShape, k: mixK * mixK * (3 - 2 * mixK)} : undefined;
+      let mix: HandMix | undefined = isRig(shape) && shape !== restShape && mixK < 1 ? {shape: restShape, k: mixK * mixK * (3 - 2 * mixK)} : undefined;
+      let drawShape: HandShape = mixK > 0 ? shape : restShape;
+      // a finger (grip point) comes out of a fist: a hanging hand → a fist → the index finger unbends. Straight from a hanging hand the
+      // index and the middle finger parted on the way with a notch between them ("fingers apart")
+      if (shape === 'point' && restShape !== 'fist') {
+        const k1 = clamp((gw - 0.12) / 0.33), k2 = clamp((gw - 0.45) / 0.4);
+        const sm = (x: number) => x * x * (3 - 2 * x);
+        if (k2 > 0) {
+          drawShape = 'point';
+          mix = k2 < 1 ? {shape: 'fist', k: sm(k2)} : undefined;
+        } else if (k1 > 0) {
+          drawShape = 'fist';
+          mix = k1 < 1 ? {shape: restShape, k: sm(k1)} : undefined;
+        } else {
+          drawShape = restShape;
+          mix = undefined;
+        }
+      }
       // the motion of a gesture turns the arm segments IN THE FRAME: the upper arm and the forearm turn from the pose of the arm to the pose
       // of the gesture each along its own arc in the frame, the visible length of a segment goes from the start one to the end one (a segment
       // on the way does not point "at the viewer" — the hand is not left without an arm), the depth comes from the constant length. The
@@ -622,9 +666,11 @@ export function bodyPose(p: BodyIn): Body {
       const midView: HandView = plane && gw > 0.12 ? (planeOut ? 'palmar' : 'dorsal') : restView;
       // the hand view — the one of the pose while its palm is not twisted (a pose with a point has its own palm normal: towards the target,
       // down onto the rail); otherwise the nearest natural one (solve → liveView). The hand direction goes from the forearm line to the
-      // direction of the pose over the motion (dirK)
-      const hopt: SolveOpt = {q, dir, dirK: dirK * dirK * (3 - 2 * dirK), bend: (back ? -0.1 : 0.1) * (1 - dirK), keep: run, from: mix, palm: on ? palmG : undefined, wk: clamp((gw - 0.6) / 0.4)};
-      const r = EWm ? place(EWm.E, EWm.W, Pm, on ? view : midView, mixK > 0 ? shape : restShape, hopt) : solve(Tm, Pm, on ? view : midView, mixK > 0 ? shape : restShape, hopt);
+      // direction of the pose over the motion (dirK). A fingertip (grip point) at the point (gw > 0.98, as the grip goes to the journal)
+      // keeps the view fitted to the point above; on the way — the natural turn (fixed on the way twisted the palm by 131°)
+      const hopt: SolveOpt = {q, dir, dirK: dirK * dirK * (3 - 2 * dirK), bend: (back ? -0.1 : 0.1) * (1 - dirK), keep: run, from: mix, palm: on ? palmG : undefined, wk: clamp((gw - 0.6) / 0.4),
+        fixed: gw > 0.98 && shape === 'point' ? true : undefined};
+      const r = EWm ? place(EWm.E, EWm.W, Pm, on ? view : midView, drawShape, hopt) : solve(Tm, Pm, on ? view : midView, drawShape, hopt);
       let item: Layer | null = null;
       if (fistItem && r.h.shape === 'fist') {
         item = hold === 'flashlight' ? prop({kind: 'flashlight', at: fistAt(r.h).G, axis: fistAt(r.h).ax, len: back ? 1.15 : 1.3})
@@ -907,7 +953,7 @@ export function bodyPose(p: BodyIn): Body {
         const flip = pa.face !== pb.face;
         const face = flip ? (mm < 0.5 ? pa.face : pb.face) : pa.face;
         const sy = flip ? (mm < 0.5 ? 1 - 1.5 * mm : 0.25 + 1.5 * (mm - 0.5)) : 1;
-        const phone = prop({kind: 'phone', at: C, angle: ka.a + dA * mm, face, scale: lerp(ka.sc, kb.sc, mm), squeeze: sy});
+        const phone = prop({kind: 'phone', at: C, angle: ka.a + dA * mm, face, scale: lerp(ka.sc, kb.sc, mm), squeeze: sy, ...(look.phone ? {look: look.phone} : {})});
         const lvl = (n: string) => (n === 'ear' ? 1 : n === 'mid' ? 0.5 : 0);
         const dm = lvl(A) * (1 - x) + lvl(B) * x; // arm height: 0 — in front, 1 — at the ear
         if (r.h.shape !== 'ear') {
@@ -950,7 +996,7 @@ export function bodyPose(p: BodyIn): Body {
         }
         const G = r.h.at(12, 44);
         // the box is drawn once: by the left arm on screen, or by this arm if the other hand holds something else
-        push([arm(S, r.E, r.W), s < 0 || pair !== 'box' ? prop({kind: 'box', w: bw}) : null, front(r.h)]);
+        push([arm(S, r.E, r.W), s < 0 || pair !== 'box' ? prop({kind: 'box', w: bw, ...(look.box ? {look: look.box} : {})}) : null, front(r.h)]);
         log(r, {grip: G, target: [s * bw, G[1]], layers: 'arm → box → hand on the side face, fingers under the bottom'});
         return dryEW;
       }

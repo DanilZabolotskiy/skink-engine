@@ -110,14 +110,20 @@ export const Chapter: React.FC<{timeline: Timeline; clean?: boolean; subs?: bool
       <StageCtx.Provider value={{stage: shot.stage, lt, fps}}>{kit0}</StageCtx.Provider>
     </StyleCtx.Provider>
   );
+  // a cell is crossed out at the moment of the breach, not from the first frame of the shot: the event "hud.cross" (prop hud.crossed
+  // 0 → 1) — before it the current cell of the shot is lit, after it crossed out; no such state — as the script TEXT says. Cells crossed
+  // in earlier shots ("2 crossed, 3 lit") stay crossed
+  const hc = propAt(shot.stage, 'hud', 'crossed', lt);
+  const c0 = shot.counter;
+  const counter = c0 && hc !== null && hc <= 0.5 ? {...c0, crossed: c0.crossed.filter((n) => n !== c0.current)} : c0;
   return (
     <AbsoluteFill data-stage="root" style={{background: '#000', overflow: 'hidden'}}>
       {ch.grades?.[shot.preset] ? <GradeLayer key={f} preset={shot.preset}>{kitNode}</GradeLayer> : kitNode}
       {shot.kit && !def && <div style={{position: 'absolute', left: 40, top: 120, background: '#FFE14D', padding: 10, fontSize: 30}}>no kit "{shot.kit}"</div>}
       {!clean && cards.length > 0 && <Cards cards={cards} lt={lt} dur={dur} bottom={shot.cardsAt === 'bottom'} theme={theme} />}
       {!clean && shot.bar && (
-        <TitleBar theme={theme} t={t} title={shot.bar} counter={shot.counter} counterLabel={ch.hud?.counterLabel} stamp={shot.stamp ?? undefined}
-          stampBack={(propAt(shot.stage, 'hud', 'stamp', 0) ?? 0) > 0.5} emphasis={shot.counter?.crossed.length ? 0.5 + 0.5 * Math.sin(lt * 8) : 0} />
+        <TitleBar theme={theme} t={t} title={shot.bar} counter={counter} counterLabel={ch.hud?.counterLabel} stamp={shot.stamp ?? undefined}
+          stampBack={(propAt(shot.stage, 'hud', 'stamp', 0) ?? 0) > 0.5} emphasis={counter?.crossed.includes(counter.current) ? 0.5 + 0.5 * Math.sin(lt * 8) : 0} />
       )}
       {!clean && shot.place && (
         <PlaceTag theme={theme} lines={shot.place} f={f} from={shot.from + Math.round(0.4 * fps)} to={Math.min(shot.to - Math.round(0.2 * fps), shot.from + Math.round(5.6 * fps))}

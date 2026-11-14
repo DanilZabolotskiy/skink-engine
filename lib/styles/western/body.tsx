@@ -5,7 +5,7 @@ import React from 'react';
 import {n1, noise1, polyline, scaleHex, smooth} from '../../anim';
 import {Outfit} from '../../character/Character';
 import {HIP, Hand, Layer, NECKB, SHY} from '../../character/body';
-import {handMatrix} from '../../character/hand';
+import {handMatrix, pointTip} from '../../character/hand';
 import {Look} from '../../character/looks';
 import type {BodyIn, BodyOut} from '../../character/style';
 import {drawItem} from '../../props/props';
@@ -91,17 +91,34 @@ function torsoOf(o: Outfit, look: Look, uid: string, back: boolean, w: number, b
 
 
 /** A mitten hand in the hand frame: a palm with a thumb; an open hand is longer, a closed one rounder. count raises the fingers one by
- *  one (q — how many are raised): every finger unfolds smoothly, so it does not appear within a frame. */
+ *  one (q — how many are raised): every finger unfolds smoothly, so it does not appear within a frame. point — a closed mitten with one
+ *  finger up to the fingertip of the core (pointTip: the push gesture with grip point puts it on the kit point); out of a fist the finger
+ *  grows with the transition. */
 function mitten(h: Hand, fill: string, line: string, key: string): React.ReactNode {
   const sw = (OL * 0.75) / h.k;
-  const open = ['relaxed', 'open', 'flat', 'point', 'count'].includes(h.shape);
+  const open = ['relaxed', 'open', 'flat', 'count'].includes(h.shape);
   const thumb = h.view === 'dorsal' || h.view === 'palmar';
   const up = (i: number) => smooth(h.q - i); // 0 — folded on the palm, 1 — raised
+  const finger = (() => {
+    if (h.shape !== 'point') return null;
+    const tip = pointTip(h.view);
+    const e = h.from ? Math.max(0, Math.min(1, h.from.k)) : 1; // 0 — still in the fist
+    const B: Pt = [tip[0] * 0.85, 30];
+    const T: Pt = [B[0] + (tip[0] - B[0]) * e, B[1] + (tip[1] - 3.6 - B[1]) * e]; // the round end reaches the tip
+    const d = `M ${n1(B[0])} ${n1(B[1])} L ${n1(T[0])} ${n1(T[1])}`;
+    return (
+      <>
+        <path d={d} stroke={line} strokeWidth={7.2 + sw * 1.6} strokeLinecap="round" fill="none" />
+        <path d={d} stroke={fill} strokeWidth={7.2} strokeLinecap="round" fill="none" />
+      </>
+    );
+  })();
   return (
     <g key={key} transform={handMatrix(h.W, h.f, h.u, h.k)}>
       {h.shape === 'count' && [0, 1, 2, 3].map((i) => (
         <rect key={i} x={-11 + i * 7.4 - 3.6} y={28} width={7.2} height={12 + 30 * up(i)} rx={3.6} fill={fill} stroke={line} strokeWidth={sw * 0.8} />
       ))}
+      {finger}
       <ellipse cx={0} cy={open ? 24 : 21} rx={open ? 15 : 16} ry={open ? 23 : 18} fill={fill} stroke={line} strokeWidth={sw} />
       {thumb && <ellipse cx={13} cy={12} rx={5.5} ry={10} transform="rotate(-25 13 12)" fill={fill} stroke={line} strokeWidth={sw * 0.8} />}
     </g>

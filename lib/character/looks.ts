@@ -1,5 +1,6 @@
 // Look of a figure on top of Character: hairstyle, headwear, glasses, type of top and bottom, proportions, age, items in hands.
 // Colours are in Outfit. A figure without a look is drawn with DEFAULT_LOOK.
+import type {BoxLook, PhoneLook} from '../props/props';
 
 /** An item in a hand. phoneEar — the phone at the ear; box — with both hands at the waist. Poses without an item: rest — sits at a
  *  table, forearms on the table (hands at the table edge, elbows at the sides); point — the arm stretched up and to the side, an open
@@ -25,6 +26,11 @@ export type Look = {
   neck?: number; // a longer neck, body units: the head sits higher above the collar (otherwise a collared shirt can touch the chin)
   hold?: [Hold, Hold]; // [right, left] — the figure's own hands: facing the camera the right hand is on the left of the frame
   bagStrap?: string; // the colour of the strap of a held bag, drawn over an outline: a dark strap over dark trousers does not read
+  // the phone in the hand (hold phone, phoneEar, the tap gesture) and the box in both hands (hold box) — the same model as the one the
+  // kit draws elsewhere in the story (a phone on a table, a wet box on a counter): a prop in a hand is drawn the same as on the floor
+  // (lib/props/props.tsx: PhoneLook, BoxLook; colours #rrggbb); no field — the default phone and box
+  phone?: PhoneLook;
+  box?: BoxLook;
   features?: FaceFeatures; // individual face features of the role; a style draws those it supports
 };
 

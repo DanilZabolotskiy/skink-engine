@@ -38,6 +38,11 @@ export const HAND_GRIP: Partial<Record<HandShape, {grip: Pt; c?: Pt; axis?: Pt; 
 export const fistGrip = (view: HandView): {c: Pt; axis: Pt} =>
   view === 'radial' || view === 'ulnar' ? {c: HAND_GRIP.fist!.c!, axis: HAND_GRIP.fist!.axis!} : {c: [0, 30], axis: [0.993, 0.12]};
 
+/** The tip of the straight index finger of the point shape in the hand frame of a view (the knuckle of the index finger plus its three
+ *  segments): from the side — radial (the thumb side) or ulnar (the little finger side), facing or from the back — beside the thumb. The
+ *  push gesture with grip point puts this tip on the kit point; a style draws the finger up to it. */
+export const pointTip = (view: HandView): Pt => [view === 'ulnar' ? -8.1 : view === 'radial' ? 9.5 : 10.7, 58];
+
 /** SVG transform of the hand frame: wrist W, fingers along f, thumb (or palm) side u, scale k. */
 export const handMatrix = (W: Pt, f: Pt, u: Pt, k: number) =>
   `matrix(${(u[0] * k).toFixed(3)} ${(u[1] * k).toFixed(3)} ${(f[0] * k).toFixed(3)} ${(f[1] * k).toFixed(3)} ${W[0].toFixed(1)} ${W[1].toFixed(1)})`;

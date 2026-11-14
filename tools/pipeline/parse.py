@@ -58,12 +58,16 @@ def parse_text(raw: str):
         if head.startswith('title bar'):
             items.append({'kind': 'bar', 'title': qs[0] if qs else head[9:].strip()})
         elif head.startswith('counter'):
-            # counter 1–5, 2 lit | counter 1–5, 2 crossed | counter off
+            # counter 1–5, 2 lit | counter 1–5, 2 crossed | counter 1–5, 2 crossed, 3 lit | counter off. Several cells: a crossed
+            # cell stays crossed and the next one is lit (with one state only the cell of the shot was crossed, and the line over the
+            # previous cell vanished when the next one lit up); the current cell is the last lit one, else the last crossed one
             m = re.search(r'(\d+)\s*[–-]\s*(\d+)', it)
-            cur = re.search(r'(\d+)\s+(lit|on|crossed|active)\b', it, re.I)
-            n = int(cur.group(1)) if cur else 0
-            items.append({'kind': 'counter', 'total': int(m.group(2)) if m else max(n, 1), 'current': n,
-                          'crossed': [n] if cur and cur.group(2).lower() == 'crossed' else [],
+            st = [(int(k), s.lower()) for k, s in re.findall(r'(\d+)\s+(lit|on|crossed|active)\b', it, re.I)]
+            lit = [k for k, s in st if s != 'crossed']
+            crossed = [k for k, s in st if s == 'crossed']
+            n = (lit or crossed or [0])[-1]
+            items.append({'kind': 'counter', 'total': int(m.group(2)) if m else max([n, 1] + crossed), 'current': n,
+                          'crossed': crossed,
                           'hidden': bool(re.search(r'\b(off|hidden|hide)\b', head))})
         elif head.startswith('place'):
             lines = [x.strip() for x in (qs[0] if qs else '').split('·', 1)] if qs else []

@@ -72,7 +72,7 @@ A kit is a React component `({shot, t, lt, f}: KitProps) => JSX` that draws one 
 `chapter/cast.tsx` maps the regulars of the channel to a `Person`; the roles of an episode go to `chapter/roles/<episode>.tsx` (`export const ROLES: Record<string, Person>`), which `cast.tsx` adds with `rolesOf(require.context('./roles', false, /\.tsx$/))`. A person:
 
 - `outfit` — colours: skin, hair, top, shirt, trousers, shoes, lanyard, folder, line (`Outfit` of `lib/character/Character.tsx`; missing ones come from `OUTFIT_DEFAULT`);
-- `look` — `lib/character/looks.ts`: `build` (man, woman or child: proportions and face type; default — man), hair, top, bottom, a cap, glasses, age, width, head size, items in the hands, a lanyard with a badge (only when `lanyard` is set), individual face features (`features`);
+- `look` — `lib/character/looks.ts`: `build` (man, woman or child: proportions and face type; default — man), hair, top, bottom, a cap, glasses, age, width, head size, items in the hands, the look of a held phone and box (`phone`: screen and body colours, dial keys, a crack, a scale; `box`: face, tape and label colours, a wet stain — the same model as the one a kit draws elsewhere; `Figure` takes `phone` / `box` per frame too, so a kit can switch a screen off), a lanyard with a badge (only when `lanyard` is set), individual face features (`features`);
 - `h` — height in metres; `hero` — keeps its own colours under a colour grade;
 - `style` — a drawing style (a folder of `lib/styles`) other than the chapter's (`channel.json → style`).
 
@@ -84,4 +84,4 @@ In `channel.json` (for a role of an episode — in `pipeline/parts/<episode>.jso
 
 ## HUD
 
-`ChannelModule.hud` sets the brand line over the episode plate, the label before the counter cells and the colour theme (`HudTheme` of `lib/hud/hud.tsx`, over `HUD_DEFAULT`). What the bar shows comes from the script (`TEXT: title bar "…"; counter 1–5, 2 lit`, see [SCRIPT_FORMAT.md](SCRIPT_FORMAT.md)): no title bar line — no bar; no counter line — no cells. `channel.json → hud`: `stamp` (a stamp under the right end of the bar for every shot, optional) and `episode_plate` (`"Episode {ep}"`).
+`ChannelModule.hud` sets the brand line over the episode plate, the label before the counter cells and the colour theme (`HudTheme` of `lib/hud/hud.tsx`, over `HUD_DEFAULT`). What the bar shows comes from the script (`TEXT: title bar "…"; counter 1–5, 2 lit`, see [SCRIPT_FORMAT.md](SCRIPT_FORMAT.md)): no title bar line — no bar; no counter line — no cells; a cell crossed out at the moment of the breach — the staging event `hud.cross` ([STAGING.md](STAGING.md)). `channel.json → hud`: `stamp` (a stamp under the right end of the bar for every shot, optional) and `episode_plate` (`"Episode {ep}"`).

@@ -51,10 +51,11 @@ The layer between the script and Remotion. Its job: sound out of sync, props jum
   | `stamp.press`, `box.set` | a stamp, a box: a hit at the end of the motion | `stamp`, `box_thud` |
   | `pen.mark`, `keypad.light`, `drop.run`, `hand.grab`, `hand.out`, `beam.sweep` | pen, lock, drop, hand, torch beam | — |
   | `prop.fall`, `prop.roll`, `prop.stop`, `prop.spin` | prop `obj` falls, rolls, stops, spins: `down` / `roll` / `spin` 0 → 1 | by the entry |
+  | `hud.cross` | `obj: hud`, `crossed` 0 → 1: the current counter cell of the shot is lit before the event and crossed out after it (the script TEXT `counter …, N crossed` alone crosses it from the first frame) | — |
   | `cut` | a cut inside the shot (`why` required) | — |
   | `cue` | sound `sfx` out of frame; `see` required | `sfx` |
 
-  Gesture poses: `push`, `pull`, `press`, `write`, `dial`, `tap`, `hangup`, `rail`, `count`, `straighten`, `point`, `knock` (see `actions.json → poses`). Gesture fields: `side` — the figure's own hand (`R` / `L`), `n` — fingers of `count` or hits of `knock`, `grip: "fist"` — a fist on the handle, `stay`, `in` / `out`, s; `ramp` — the entry share of `tap` (`0.001` — the figure is in the phone from the first frame of a long shot).
+  Gesture poses: `push`, `pull`, `press`, `write`, `dial`, `tap`, `hangup`, `rail`, `count`, `straighten`, `point`, `knock` (see `actions.json → poses`). Gesture fields: `side` — the figure's own hand (`R` / `L`), `n` — fingers of `count` or hits of `knock`, `grip` of `push` — `"fist"` (a fist on the handle), `"press"` (the palm presses a sheet to a wall beside the figure: facing, the edge of the hand towards the viewer) or `"point"` (the tip of the index finger on the kit point `reach` — a line of a sheet, a button; out of a fist, the finger unbends on the way; without `reach` — a flat palm), `stay`, `in` / `out`, s; `ramp` — the entry share of `tap` (`0.001` — the figure is in the phone from the first frame of a long shot).
 - On an event: `"sfx": false` — no sound; `"sfx": ["id"]` — an own sound; `"offscreen": true` — the source is out of frame.
 - On a shot:
   - `"view"`, `"move"`, `"cast"` — override what the script words give (`cast`: `{"who", "emo", "facing", "hold", "shoe"}`; `hold` — the figure's hands [right, left]);

@@ -6,7 +6,7 @@ Skink is a 2D animated-video engine built on top of [Remotion](https://www.remot
 
 ## What it makes
 
-- **Story and explainer videos with characters** — cut-out characters drawn in SVG: emotions as numbers, blinking, gaze and head turns, mouth by syllables of the TTS timings, gestures (count, point, press, write, dial, phone at the ear, push / pull a door, hand on a rail, knock with a mop…), props in hands, walking with steps matched to the body speed. The pose is solved once by the core; pluggable drawing styles draw it.
+- **Story and explainer videos with characters** — cut-out characters drawn in SVG: emotions as numbers, blinking, gaze and head turns, mouth by syllables of the TTS timings, gestures (count, point, press, write, dial, phone at the ear, push / pull a door, a fingertip on a button, a palm pressing a sheet, hand on a rail, knock with a mop…), props in hands (a role can have its own phone and box), walking with steps matched to the body speed. The pose is solved once by the core; pluggable drawing styles draw it.
 - **Locations as rooms in metres** — a room is described once (walls, furniture, light pools, signs) and drawn flat in perspective; a view is just a camera: wide shots, close-ups, push-ins and pans of the same room.
 - **Documents and inserts** — papers and cards sliding in, stamps, notes, on-screen text cards; top-down shots of a table.
 - **Staging by events** — every motion and its sound come from one event in `staging.json` (`walk`, `look`, `gesture`, `door.open`, `paper.slide`, `stamp.press`, `lamp.flicker`…), so sound and picture cannot drift apart.

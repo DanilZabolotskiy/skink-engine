@@ -36,11 +36,37 @@ def sino(n: int) -> str:
     return out
 
 
-def norm(s: str, lang: str = 'ko') -> str:
-    """Text for comparison with the recognised one: letters only; for Korean digits become words (recognition writes "13번" as "십삼번")."""
+_TENS = ['', '열', '스물', '서른', '마흔', '쉰', '예순', '일흔', '여든', '아흔']
+_ONES = ['', '한', '두', '세', '네', '다섯', '여섯', '일곱', '여덟', '아홉']  # before a counter word: 서른세 개, 두 번
+_ONES_BARE = ['', '하나', '둘', '셋', '넷', '다섯', '여섯', '일곱', '여덟', '아홉']
+
+
+def native(n: int, bare: bool = False) -> str | None:
+    """A number in native Korean counting (1–99): 33 → 서른세 (before a counter word) or 서른셋 (on its own); 20 → 스무 / 스물.
+    Otherwise None."""
+    if not 0 < n < 100:
+        return None
+    t, o = divmod(n, 10)
+    if n == 20 and not bare:
+        return '스무'
+    return _TENS[t] + (_ONES_BARE if bare else _ONES)[o]
+
+
+def norm(s: str, lang: str = 'ko', ref: str = '') -> str:
+    """Text for comparison with the recognised one: letters only; for Korean digits become words (recognition writes "13번" as "십삼번").
+    Every number is read in the counting the line text ref uses: Sino-Korean (십삼), native before a counter word (recognition writes
+    "서른세 개" as "33개", "아홉 시" as "9시") or native on its own (서른셋); without ref or without a match — Sino-Korean (a line with
+    "33개" was heard right but scored 0.79 against "삼십삼")."""
     if lang != 'ko':  # other languages: letters and digits only, case-insensitive
         return re.sub(r'[\W_]', '', (s or '').lower())
-    s = re.sub(r'\d{1,4}', lambda m: sino(int(m.group(0))), s or '')
+
+    def word(m):
+        n = int(m.group(0))
+        for w in (sino(n), native(n), native(n, True)):
+            if w and w in ref:
+                return w
+        return sino(n)
+    s = re.sub(r'\d{1,4}', word, s or '')
     return re.sub(r'[^가-힣0-9a-zA-Z]', '', s)
 
 
@@ -108,7 +134,8 @@ def stt_check(tl: dict, wd: Path, ch: Channel, run_stt: bool):
     for ln in lines:
         ws = own.get(ln['id'], [])
         got = ''.join(w['text'] for w in ws)
-        ratio = difflib.SequenceMatcher(None, norm(ln['text'], ch.lang), norm(got, ch.lang)).ratio()
+        want = norm(ln['text'], ch.lang)
+        ratio = difflib.SequenceMatcher(None, want, norm(got, ch.lang, want)).ratio()
         off = None if not ws else 0.0 if ws[0]['lo'] <= ln['start'] <= ws[0]['start'] else ws[0]['start'] - ln['start']
         bad = ratio < cfg['stt_min_ratio'] or off is None or abs(off) > cfg['stt_max_offset']
         rows.append({'id': ln['id'], 'speaker': ln['speaker'], 'ratio': round(ratio, 2), 'offset': None if off is None else round(off, 2),
